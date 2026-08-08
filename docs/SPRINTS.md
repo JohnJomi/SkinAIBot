@@ -1,6 +1,6 @@
 # Sprint Tracker
 
-> Sprint numbering matches `docs/ROADMAP.md`. Status legend: 🟢 Ready to Start · 🔄 In Progress · ✅ Complete · ⏳ Pending · 🔴 Blocked.
+> Sprint numbering matches `docs/ROADMAP.md`. Status legend: ☐ Pending · 🟢 Ready to Start · 🔄 In Progress · ✅ Complete · 🔴 Blocked.
 
 ---
 
