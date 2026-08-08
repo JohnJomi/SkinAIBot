@@ -1,0 +1,40 @@
+openapi: 3.0.3
+info:
+  title: SkinAIBot AI Platform API
+  description: Internal API contract between the Application Backend and the AI/ML Platform.
+  version: 0.1.0
+paths:
+  /ai/analyze:
+    post:
+      summary: Analyze a skin image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './analyze_request.schema.json'
+      responses:
+        '200':
+          description: Analysis results
+          content:
+            application/json:
+              schema:
+                $ref: './analyze_response.schema.json'
+  /ai/chat:
+    post:
+      summary: Chat with the AI regarding an analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './chat_request.schema.json'
+      responses:
+        '200':
+          description: Chat response
+  /ai/health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK

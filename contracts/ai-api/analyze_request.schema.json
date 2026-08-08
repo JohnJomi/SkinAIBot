@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AnalyzeRequest",
+  "type": "object",
+  "properties": {
+    "analysis_id": {
+      "type": "string",
+      "description": "Unique identifier for this analysis request from the backend"
+    },
+    "image_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL of the image to analyze (accessible to the AI service)"
+    },
+    "model_version": {
+      "type": "string",
+      "description": "Optional model version to use for inference"
+    }
+  },
+  "required": ["analysis_id", "image_url"]
+}
