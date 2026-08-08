@@ -8,7 +8,6 @@ from backend.app.ai.schemas import (
     AIChatResponse,
 )
 from backend.app.exceptions import AIServiceUnavailableError, AIUpstreamResponseError
-from pydantic import ValidationError
 
 VALID_ANALYZE_RESPONSE = {
     "analysis_id": "123",
@@ -75,10 +74,47 @@ async def test_analyze_rejects_malformed_response(mock_transport_client):
     mock_transport_client(handler)
 
     client = AIClient()
-    with pytest.raises(ValidationError):
+    with pytest.raises(AIUpstreamResponseError) as exc_info:
         await client.analyze(
             AIAnalyzeRequest(analysis_id="123", image_url="http://example.com/image.jpg")
         )
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.code == "AI_UPSTREAM_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_analyze_raises_on_malformed_json(mock_transport_client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=b"not-json", headers={"content-type": "application/json"}
+        )
+
+    mock_transport_client(handler)
+
+    client = AIClient()
+    with pytest.raises(AIUpstreamResponseError) as exc_info:
+        await client.analyze(
+            AIAnalyzeRequest(analysis_id="123", image_url="http://example.com/image.jpg")
+        )
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.code == "AI_UPSTREAM_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_chat_rejects_invalid_response(mock_transport_client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"response": "missing disclaimer"})
+
+    mock_transport_client(handler)
+
+    client = AIClient()
+    with pytest.raises(AIUpstreamResponseError) as exc_info:
+        await client.chat(AIChatRequest(session_id="session1", message="hello"))
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.code == "AI_UPSTREAM_ERROR"
 
 
 @pytest.mark.asyncio

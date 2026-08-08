@@ -1,6 +1,8 @@
+import json
 import os
 
 import httpx
+from pydantic import ValidationError
 
 from ..exceptions import AIServiceUnavailableError, AIUpstreamResponseError
 from .schemas import AIAnalyzeRequest, AIAnalyzeResponse, AIChatRequest, AIChatResponse
@@ -24,12 +26,25 @@ class AIClient:
             raise AIServiceUnavailableError(
                 f"AI service at {self.base_url} is unreachable or timed out."
             ) from exc
-        return resp.json()
+        try:
+            return resp.json()
+        except json.JSONDecodeError as exc:
+            raise AIUpstreamResponseError(
+                f"AI service returned a malformed JSON response for {path}."
+            ) from exc
+
+    def _validate(self, path: str, model: type, data: dict):
+        try:
+            return model.model_validate(data)
+        except ValidationError as exc:
+            raise AIUpstreamResponseError(
+                f"AI service returned a response that does not conform to the contract for {path}."
+            ) from exc
 
     async def analyze(self, req: AIAnalyzeRequest) -> AIAnalyzeResponse:
         data = await self._post_json("/ai/analyze", req.model_dump(mode='json'))
-        return AIAnalyzeResponse.model_validate(data)
+        return self._validate("/ai/analyze", AIAnalyzeResponse, data)
 
     async def chat(self, req: AIChatRequest) -> AIChatResponse:
         data = await self._post_json("/ai/chat", req.model_dump(mode='json'))
-        return AIChatResponse.model_validate(data)
+        return self._validate("/ai/chat", AIChatResponse, data)

@@ -11,7 +11,7 @@
       "type": "string"
     },
     "analysis_id": {
-      "type": "string",
+      "type": ["string", "null"],
       "description": "Optional context regarding a previous analysis"
     }
   },

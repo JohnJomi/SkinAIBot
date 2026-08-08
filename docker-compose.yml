@@ -5,7 +5,7 @@ services:
     build:
       context: ./frontend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - NODE_ENV=development
     depends_on:
@@ -15,7 +15,7 @@ services:
     build:
       context: ./backend
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - DATABASE_URL=postgresql://user:password@postgres:5432/skinaibot
       - AI_SERVICE_URL=http://ai-service:8001
@@ -27,7 +27,7 @@ services:
     build:
       context: ./ai/service
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     environment:
       - LLM_PROVIDER=openai
 
@@ -37,8 +37,6 @@ services:
       - POSTGRES_USER=user
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=skinaibot
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
