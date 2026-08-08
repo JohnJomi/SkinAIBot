@@ -32,6 +32,10 @@ paths:
       responses:
         '200':
           description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: './chat_response.schema.json'
   /ai/health:
     get:
       summary: Health check

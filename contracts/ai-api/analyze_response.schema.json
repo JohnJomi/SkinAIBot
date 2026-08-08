@@ -44,5 +44,14 @@
       "type": "string"
     }
   },
-  "required": ["analysis_id", "status", "predictions"]
+  "required": [
+    "analysis_id",
+    "status",
+    "model_version",
+    "predictions",
+    "confidence_status",
+    "explanation",
+    "recommendation",
+    "disclaimer"
+  ]
 }

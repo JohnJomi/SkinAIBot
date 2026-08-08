@@ -1,5 +1,7 @@
-from pydantic import BaseModel, HttpUrl
-from typing import List, Optional
+from typing import List, Literal, Optional
+
+from pydantic import BaseModel, Field, HttpUrl
+
 
 class AIAnalyzeRequest(BaseModel):
     analysis_id: str
@@ -8,14 +10,14 @@ class AIAnalyzeRequest(BaseModel):
 
 class AIPrediction(BaseModel):
     label: str
-    confidence: float
+    confidence: float = Field(ge=0, le=1)
 
 class AIAnalyzeResponse(BaseModel):
     analysis_id: str
-    status: str
+    status: Literal["completed", "failed", "processing"]
     model_version: str
     predictions: List[AIPrediction]
-    confidence_status: str
+    confidence_status: Literal["high", "moderate", "low"]
     explanation: str
     recommendation: str
     disclaimer: str

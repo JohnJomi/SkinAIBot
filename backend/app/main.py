@@ -1,13 +1,21 @@
 from fastapi import FastAPI
 
+from .ai import get_ai_client
+from .ai.schemas import (
+    AIAnalyzeRequest,
+    AIAnalyzeResponse,
+    AIChatRequest,
+    AIChatResponse,
+)
+from .exceptions import register_exception_handlers
+
 app = FastAPI(
     title="Skin Disease Diagnosis API",
     description="Backend API for the Skin Disease Diagnosis AI Platform.",
     version="0.1.0",
 )
 
-from .ai.schemas import AIAnalyzeRequest, AIAnalyzeResponse, AIChatRequest, AIChatResponse
-from .ai import get_ai_client
+register_exception_handlers(app)
 
 
 @app.get("/")
