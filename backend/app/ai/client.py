@@ -11,7 +11,7 @@ AI_REQUEST_TIMEOUT = 30.0
 
 class AIClient:
     def __init__(self):
-        self.base_url = os.getenv("AI_SERVICE_URL", "http://localhost:8001")
+        self.base_url = os.getenv("AI_SERVICE_URL", "http://localhost:8001").rstrip("/")
 
     async def _post_json(self, path: str, payload: dict) -> dict:
         try:
