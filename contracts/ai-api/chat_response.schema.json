@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ChatResponse",
+  "type": "object",
+  "properties": {
+    "response": {
+      "type": "string",
+      "description": "Chat reply from the AI assistant"
+    },
+    "disclaimer": {
+      "type": "string",
+      "description": "Medical disclaimer that must accompany the reply"
+    }
+  },
+  "required": ["response", "disclaimer"]
+}
