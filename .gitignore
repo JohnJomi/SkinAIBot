@@ -15,7 +15,8 @@ build/
 
 # Secrets
 .env
-.env.local
+.env.*
+!.env.example
 *.key
 *.pem
 google-services.json
