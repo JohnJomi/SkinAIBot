@@ -9,7 +9,13 @@ from .ai.schemas import (
     AIChatResponse,
 )
 from .api.v1.routers import auth_router, uploads_router
+from .config import get_settings
 from .exceptions import register_exception_handlers
+
+# Resolve settings eagerly: configuration is only read lazily elsewhere, so
+# without this a deployment missing JWT_SECRET_KEY would boot successfully and
+# fail with a 500 on the first login instead of refusing to start.
+get_settings()
 
 app = FastAPI(
     title="Skin Disease Diagnosis API",

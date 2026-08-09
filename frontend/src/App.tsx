@@ -13,12 +13,23 @@ function App() {
       setUser(null)
       return
     }
+    // The token can change while this request is in flight (logout then login,
+    // or a fast re-login). Only the newest effect instance may touch auth state,
+    // otherwise a stale 401 from the previous token would log the user back out.
+    let active = true
     getCurrentUser(token)
-      .then(setUser)
+      .then((currentUser) => {
+        if (!active) return
+        setUser(currentUser)
+      })
       .catch(() => {
+        if (!active) return
         localStorage.removeItem(TOKEN_STORAGE_KEY)
         setToken(null)
       })
+    return () => {
+      active = false
+    }
   }, [token])
 
   const handleLoggedIn = async (newToken: string) => {

@@ -19,6 +19,11 @@ class UserRepository:
         return result.scalar_one_or_none()
 
     async def create(self, email: str, hashed_password: str) -> User:
+        """Insert a user.
+
+        Raises sqlalchemy.exc.IntegrityError if the email unique index rejects
+        the row; the caller owns rolling back and translating that error.
+        """
         user = User(email=email, hashed_password=hashed_password)
         self.session.add(user)
         await self.session.commit()

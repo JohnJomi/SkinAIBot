@@ -65,6 +65,11 @@ class InvalidCredentialsError(AppError):
     code = "INVALID_CREDENTIALS"
 
 
+class PasswordTooLongError(AppError):
+    status_code = 422
+    code = "PASSWORD_TOO_LONG"
+
+
 class InvalidFileTypeError(AppError):
     status_code = 422
     code = "INVALID_FILE_TYPE"

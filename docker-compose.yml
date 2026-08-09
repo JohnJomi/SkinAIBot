@@ -19,7 +19,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/skinaibot
       - AI_SERVICE_URL=http://ai-service:8001
-      - JWT_SECRET_KEY=dev-secret-change-me
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set (e.g. `openssl rand -hex 32`)}
       - UPLOAD_DIR=/app/backend/uploads
     volumes:
       - uploads:/app/backend/uploads

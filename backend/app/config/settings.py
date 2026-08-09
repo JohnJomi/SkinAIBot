@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,7 +12,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://user:password@localhost:5432/skinaibot"
     ai_service_url: str = "http://localhost:8001"
 
-    jwt_secret_key: str = "dev-secret-change-me"
+    # No default: the signing secret must be supplied by the environment, so a
+    # misconfigured deployment fails at startup rather than signing tokens with
+    # a publicly known key.
+    jwt_secret_key: str = Field(min_length=32)
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
 
