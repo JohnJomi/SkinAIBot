@@ -8,10 +8,10 @@ function App() {
       <nav className="bg-white shadow-sm p-4 flex justify-between items-center">
         <h1 className="text-xl font-bold text-blue-600">SkinAIBot Platform</h1>
         <div className="space-x-4">
-          <button onClick={() => setActiveTab('dashboard')} className={activeTab === 'dashboard' ? 'font-bold' : ''}>Dashboard</button>
-          <button onClick={() => setActiveTab('upload')} className={activeTab === 'upload' ? 'font-bold' : ''}>Upload</button>
-          <button onClick={() => setActiveTab('chat')} className={activeTab === 'chat' ? 'font-bold' : ''}>Chat</button>
-          <button onClick={() => setActiveTab('login')} className={activeTab === 'login' ? 'font-bold' : ''}>Login</button>
+          <button type="button" aria-current={activeTab === 'dashboard' ? 'page' : undefined} onClick={() => setActiveTab('dashboard')} className={activeTab === 'dashboard' ? 'font-bold' : ''}>Dashboard</button>
+          <button type="button" aria-current={activeTab === 'upload' ? 'page' : undefined} onClick={() => setActiveTab('upload')} className={activeTab === 'upload' ? 'font-bold' : ''}>Upload</button>
+          <button type="button" aria-current={activeTab === 'chat' ? 'page' : undefined} onClick={() => setActiveTab('chat')} className={activeTab === 'chat' ? 'font-bold' : ''}>Chat</button>
+          <button type="button" aria-current={activeTab === 'login' ? 'page' : undefined} onClick={() => setActiveTab('login')} className={activeTab === 'login' ? 'font-bold' : ''}>Login</button>
         </div>
       </nav>
       <main className="p-8 max-w-4xl mx-auto">
