@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -11,9 +12,26 @@ from alembic import context
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from app.config import get_settings  # noqa: E402
+# Importing the models package registers every table on Base.metadata, which is
+# what autogenerate diffs against.
+from app import models  # noqa: E402,F401
 from app.database import Base  # noqa: E402
-from app.models import User  # noqa: E402,F401
+
+
+def _database_url() -> str:
+    """Resolve the database URL without requiring the full app configuration.
+
+    Migrations need database credentials but no application secrets, so a
+    migration job can run with only DATABASE_URL set. Fall back to Settings for
+    local runs driven by a .env file.
+    """
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url
+
+    from app.config import get_settings
+
+    return get_settings().database_url
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -24,7 +42,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+config.set_main_option("sqlalchemy.url", _database_url())
 
 # add your model's MetaData object here
 # for 'autogenerate' support

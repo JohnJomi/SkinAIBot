@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   frontend:
     build:
@@ -11,6 +9,20 @@ services:
     depends_on:
       - backend
 
+  # One-shot schema migration. Runs to completion before the backend starts, so
+  # a fresh database is at head on first boot. Kept separate from the app
+  # process so scaling the backend cannot run concurrent migrations.
+  migrate:
+    build:
+      context: ./backend
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/skinaibot
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -19,13 +31,17 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/skinaibot
       - AI_SERVICE_URL=http://ai-service:8001
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set (e.g. `openssl rand -hex 32`)}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
       - UPLOAD_DIR=/app/backend/uploads
     volumes:
       - uploads:/app/backend/uploads
     depends_on:
-      - ai-service
-      - postgres
+      ai-service:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   ai-service:
     build:
@@ -43,6 +59,14 @@ services:
       - POSTGRES_DB=skinaibot
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # The migrate service connects as soon as it starts, so wait for Postgres
+    # to actually accept connections rather than just for the container to run.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d skinaibot"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
 volumes:
   pgdata:
