@@ -18,4 +18,4 @@ docker compose up --build
 - **Frontend**: http://localhost:3000
 - **Application Backend**: http://localhost:8000
 - **AI Service (Mock)**: http://localhost:8001
-- **PostgreSQL**: localhost:5432
+- **PostgreSQL**: postgres:5432 (inside the Docker network; not published to the host)

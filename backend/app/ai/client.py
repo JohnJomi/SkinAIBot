@@ -22,7 +22,7 @@ class AIClient:
             raise AIUpstreamResponseError(
                 f"AI service returned HTTP {exc.response.status_code} for {path}."
             ) from exc
-        except (httpx.NetworkError, httpx.TimeoutException) as exc:
+        except httpx.RequestError as exc:
             raise AIServiceUnavailableError(
                 f"AI service at {self.base_url} is unreachable or timed out."
             ) from exc

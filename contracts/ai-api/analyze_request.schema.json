@@ -13,7 +13,7 @@
       "description": "URL of the image to analyze (accessible to the AI service)"
     },
     "model_version": {
-      "type": "string",
+      "type": ["string", "null"],
       "description": "Optional model version to use for inference"
     }
   },

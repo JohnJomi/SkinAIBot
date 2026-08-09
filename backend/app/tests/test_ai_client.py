@@ -152,6 +152,23 @@ async def test_analyze_raises_unavailable_on_connect_error(mock_transport_client
 
 
 @pytest.mark.asyncio
+async def test_analyze_raises_unavailable_on_protocol_error(mock_transport_client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.RemoteProtocolError("connection closed mid-response")
+
+    mock_transport_client(handler)
+
+    client = AIClient()
+    with pytest.raises(AIServiceUnavailableError) as exc_info:
+        await client.analyze(
+            AIAnalyzeRequest(analysis_id="123", image_url="http://example.com/image.jpg")
+        )
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.code == "AI_SERVICE_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
 async def test_chat_returns_validated_response(mock_transport_client):
     requested_url = {}
 
