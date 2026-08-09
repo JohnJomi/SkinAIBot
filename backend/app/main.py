@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .ai import get_ai_client
 from .ai.schemas import (
@@ -7,6 +8,7 @@ from .ai.schemas import (
     AIChatRequest,
     AIChatResponse,
 )
+from .api.v1.routers import auth_router, uploads_router
 from .exceptions import register_exception_handlers
 
 app = FastAPI(
@@ -15,7 +17,17 @@ app = FastAPI(
     version="0.1.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 register_exception_handlers(app)
+app.include_router(auth_router)
+app.include_router(uploads_router)
 
 
 @app.get("/")

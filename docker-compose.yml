@@ -17,8 +17,12 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/skinaibot
+      - DATABASE_URL=postgresql+asyncpg://user:password@postgres:5432/skinaibot
       - AI_SERVICE_URL=http://ai-service:8001
+      - JWT_SECRET_KEY=dev-secret-change-me
+      - UPLOAD_DIR=/app/backend/uploads
+    volumes:
+      - uploads:/app/backend/uploads
     depends_on:
       - ai-service
       - postgres
@@ -42,3 +46,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

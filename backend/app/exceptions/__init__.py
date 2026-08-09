@@ -44,6 +44,51 @@ async def ai_upstream_error_handler(
     )
 
 
+class AppError(Exception):
+    """Base error for application-level failures with a documented status code."""
+
+    status_code = 400
+    code = "APP_ERROR"
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+
+
+class EmailAlreadyRegisteredError(AppError):
+    status_code = 409
+    code = "EMAIL_ALREADY_REGISTERED"
+
+
+class InvalidCredentialsError(AppError):
+    status_code = 401
+    code = "INVALID_CREDENTIALS"
+
+
+class InvalidFileTypeError(AppError):
+    status_code = 422
+    code = "INVALID_FILE_TYPE"
+
+
+class FileTooLargeError(AppError):
+    status_code = 413
+    code = "FILE_TOO_LARGE"
+
+
+async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    """Serialize application errors into the documented structured error format."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": exc.code,
+                "message": exc.message,
+            }
+        },
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register application exception handlers on the FastAPI app."""
     app.add_exception_handler(AIUpstreamError, ai_upstream_error_handler)
+    app.add_exception_handler(AppError, app_error_handler)
