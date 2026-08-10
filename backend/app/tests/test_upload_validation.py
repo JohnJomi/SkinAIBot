@@ -72,3 +72,50 @@ def test_storage_rejects_unknown_format(tmp_path, monkeypatch):
 
 def test_format_extension_map_covers_supported_formats():
     assert set(FORMAT_EXTENSIONS) == {"JPEG", "PNG", "WEBP"}
+
+
+# ---------------------------------------------------------------------------
+# Security regression: unsupported / malformed formats must be rejected
+# ---------------------------------------------------------------------------
+
+def test_malformed_psd_bytes_rejected():
+    """Crafted PSD header bytes must not pass validation."""
+    # PSD magic: "8BPS" + version 1 (big-endian uint16)
+    psd_header = b"8BPS" + b"\x00\x01" + b"\x00" * 64
+    with pytest.raises(InvalidFileTypeError):
+        detect_image_format(psd_header)
+
+
+def test_malformed_jpeg2000_bytes_rejected():
+    """Crafted JPEG 2000 signature bytes must not pass validation."""
+    # JP2 starts with a 12-byte signature box
+    jp2_signature = (
+        b"\x00\x00\x00\x0c"  # box length
+        b"\x6a\x50\x20\x20"  # box type "jP  "
+        b"\x0d\x0a\x87\x0a"  # signature content
+        + b"\x00" * 64       # trailing garbage
+    )
+    with pytest.raises(InvalidFileTypeError):
+        detect_image_format(jp2_signature)
+
+
+@pytest.mark.parametrize("fmt", ["JPEG", "PNG", "WEBP"])
+def test_valid_supported_formats_still_accepted(fmt):
+    """Ensure security guards do not regress acceptance of valid formats."""
+    result = detect_image_format(make_image_bytes(fmt))
+    assert result == fmt
+
+
+@pytest.mark.parametrize(
+    ("label", "raw_bytes"),
+    [
+        ("pdf_header_as_jpeg", b"%PDF-1.4 fake pdf content" + b"\x00" * 32),
+        ("zip_as_png", b"PK\x03\x04" + b"\x00" * 64),
+        ("null_bytes_as_webp", b"\x00" * 128),
+        ("javascript_as_image", b"<script>alert(1)</script>"),
+    ],
+)
+def test_spoofed_non_image_bytes_rejected(label, raw_bytes):
+    """Non-image content must be rejected regardless of any MIME claim."""
+    with pytest.raises(InvalidFileTypeError):
+        detect_image_format(raw_bytes)
