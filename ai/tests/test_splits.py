@@ -116,3 +116,18 @@ def test_duplicate_image_ids_rejected(metadata):
 def test_missing_columns_rejected(metadata):
     with pytest.raises(ValueError, match="missing required columns"):
         assign_splits(metadata.drop(columns=["lesion_id"]), RATIOS, seed=42)
+
+
+def test_empty_metadata_rejected(metadata):
+    # Correct columns, no rows: the emptiness itself must be the complaint.
+    with pytest.raises(ValueError, match="metadata is empty"):
+        assign_splits(metadata.iloc[:0], RATIOS, seed=42)
+
+
+@pytest.mark.parametrize("column", ["lesion_id", "image_id", "dx"])
+def test_null_in_required_column_rejected(metadata, column):
+    corrupted = metadata.copy()
+    corrupted.loc[corrupted.index[0], column] = None
+
+    with pytest.raises(ValueError, match="null values in required columns"):
+        assign_splits(corrupted, RATIOS, seed=42)

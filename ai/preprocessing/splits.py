@@ -42,16 +42,38 @@ MANIFEST_COLUMNS: tuple[str, ...] = (
     "split",
 )
 
+# Columns the split depends on. A null in any of them silently corrupts the
+# result rather than failing: pandas drops null group keys, so a null lesion_id
+# would remove images from the split entirely, and a null dx would misroute a
+# lesion's stratum. Rejected up front instead.
+REQUIRED_COLUMNS: tuple[str, ...] = ("lesion_id", "image_id", "dx")
+
 
 def build_lesion_table(metadata: pd.DataFrame) -> pd.DataFrame:
     """Collapse the image-level metadata to one row per lesion.
 
-    Returns columns `lesion_id`, `dx`, `n_images`. Raises if a lesion carries
-    more than one diagnosis, which would make its class assignment ambiguous.
+    Returns columns `lesion_id`, `dx`, `n_images`. Raises if the metadata is
+    empty, if a required column is missing or contains nulls, or if a lesion
+    carries more than one diagnosis, which would make its class assignment
+    ambiguous.
     """
-    missing = {"lesion_id", "image_id", "dx"} - set(metadata.columns)
+    missing = set(REQUIRED_COLUMNS) - set(metadata.columns)
     if missing:
         raise ValueError(f"metadata is missing required columns: {sorted(missing)}")
+
+    if metadata.empty:
+        raise ValueError("metadata is empty; nothing to split")
+
+    null_counts = {
+        column: int(metadata[column].isna().sum())
+        for column in REQUIRED_COLUMNS
+        if metadata[column].isna().any()
+    }
+    if null_counts:
+        raise ValueError(
+            f"metadata contains null values in required columns: "
+            f"{dict(sorted(null_counts.items()))}"
+        )
 
     duplicate_images = metadata["image_id"][metadata["image_id"].duplicated()]
     if not duplicate_images.empty:
