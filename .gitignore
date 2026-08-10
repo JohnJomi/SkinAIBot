@@ -26,10 +26,11 @@ GoogleService-Info.plist
 .DS_Store
 Thumbs.db
 
-# ML & Data
-data/
-datasets/
-models/
+# ML & Data (scoped to ai/ so it doesn't shadow source dirs like backend/app/models)
+ai/**/data/
+ai/**/datasets/
+ai/**/models/
+uploads/
 *.pt
 *.pth
 *.h5
