@@ -30,12 +30,17 @@ def test_eval_transform_is_deterministic(config):
 
 
 def test_train_transform_augments(config):
+    # A single pair can coincide - every augmentation here has some chance of
+    # sampling the identity. Draw several and require that the transform did
+    # not produce the same tensor every time; the seed keeps that decisive.
     transform = build_train_transforms(config)
     image = _sample_image()
     torch.manual_seed(0)
+
     first = transform(image)
-    second = transform(image)
-    assert not torch.equal(first, second)
+    others = [transform(image) for _ in range(7)]
+
+    assert any(not torch.equal(first, other) for other in others)
 
 
 def test_normalization_is_applied(config):

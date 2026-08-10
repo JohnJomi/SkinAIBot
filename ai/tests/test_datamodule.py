@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from ai.preprocessing.datamodule import build_dataloaders
-from ai.preprocessing.dataset import HAM10000Dataset, load_manifest
+from ai.preprocessing.dataset import HAM10000Dataset, index_images, load_manifest
 from ai.preprocessing.labels import NUM_CLASSES
 from ai.preprocessing.sampling import (
     build_weighted_sampler,
@@ -79,11 +79,18 @@ def test_train_uses_augmentation_and_eval_does_not(prepared_config):
     loaders = build_dataloaders(prepared_config)
     train_dataset = loaders.train.dataset
 
+    # One pair can coincide - each augmentation can sample the identity. Read
+    # the same row several times and require that it did not come back
+    # unchanged every time; the seed keeps that decisive.
     torch.manual_seed(0)
-    assert not torch.equal(train_dataset[0][0], train_dataset[0][0])
+    first = train_dataset[0][0]
+    repeats = [train_dataset[0][0] for _ in range(7)]
+    assert any(not torch.equal(first, other) for other in repeats)
 
+    # Evaluation stays exactly reproducible: every read must be identical.
     val_dataset = loaders.val.dataset
-    assert torch.equal(val_dataset[0][0], val_dataset[0][0])
+    val_first = val_dataset[0][0]
+    assert all(torch.equal(val_first, val_dataset[0][0]) for _ in range(7))
 
 
 def test_class_weights_favour_rare_classes(prepared_config):
@@ -135,6 +142,72 @@ def test_manifest_referencing_an_absent_image_is_rejected(prepared_config):
             prepared_config.raw_image_dirs,
             build_eval_transforms(prepared_config),
         )
+
+
+def test_same_image_id_in_two_directories_is_rejected(tmp_path):
+    # HAM10000 ships two archives; extracting an overlapping copy of one into
+    # both would otherwise let the first-listed directory silently decide which
+    # pixels every downstream metric is computed on.
+    part_1, part_2 = tmp_path / "part_1", tmp_path / "part_2"
+    for directory in (part_1, part_2):
+        directory.mkdir()
+    (part_1 / "ISIC_0000001.jpg").write_bytes(b"first copy")
+    (part_2 / "ISIC_0000001.jpg").write_bytes(b"second copy")
+
+    with pytest.raises(ValueError, match="appears in multiple image directories"):
+        index_images([part_1, part_2])
+
+
+def test_same_directory_listed_twice_is_not_a_conflict(prepared_config):
+    directories = list(prepared_config.raw_image_dirs)
+    assert index_images(directories + directories) == index_images(directories)
+
+
+def _dataset_from(prepared_config, manifest):
+    return HAM10000Dataset(
+        manifest,
+        prepared_config.raw_image_dirs,
+        build_eval_transforms(prepared_config),
+    )
+
+
+def _manifest_with_first_label(prepared_config, value):
+    """A valid val manifest whose first row carries `value` as its label."""
+    manifest = load_manifest(prepared_config.manifest_path("val"))
+    # Replace the whole column so the frame's dtype follows the value rather
+    # than the assignment being coerced into the existing int64 column.
+    manifest["label_idx"] = [value, *manifest["label_idx"].tolist()[1:]]
+    return manifest
+
+
+def test_integral_labels_are_accepted(prepared_config):
+    manifest = load_manifest(prepared_config.manifest_path("val"))
+    expected = [int(value) for value in manifest["label_idx"]]
+
+    assert _dataset_from(prepared_config, manifest).labels == expected
+    # A float that happens to be integral is a valid label, not a corruption.
+    float_labels = _manifest_with_first_label(prepared_config, float(expected[0]))
+    dataset = _dataset_from(prepared_config, float_labels)
+    assert dataset.labels == expected
+    assert all(isinstance(label, int) for label in dataset.labels)
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        (1.9, "non-integral label_idx"),
+        (-0.1, "non-integral label_idx"),
+        (float("nan"), "null label_idx"),
+        (None, "null label_idx"),
+        ("nv", "non-numeric label_idx"),
+        (NUM_CLASSES, "outside"),
+        (-1, "outside"),
+    ],
+)
+def test_invalid_labels_are_rejected(prepared_config, value, message):
+    manifest = _manifest_with_first_label(prepared_config, value)
+    with pytest.raises(ValueError, match=message):
+        _dataset_from(prepared_config, manifest)
 
 
 def test_manifest_columns_are_stable(prepared_config):

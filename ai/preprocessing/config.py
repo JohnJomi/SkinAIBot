@@ -58,7 +58,9 @@ class DataConfig(BaseModel):
     module hardcodes it, so retargeting another backbone is a config edit.
     """
 
-    seed: int
+    # numpy's SeedSequence rejects negative seeds, so catch it here rather than
+    # part-way through `assign_splits`.
+    seed: int = Field(ge=0)
     raw_image_dirs: tuple[Path, ...]
     metadata_csv: Path
     manifest_dir: Path

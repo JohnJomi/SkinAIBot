@@ -19,15 +19,59 @@ IMAGE_SUFFIXES: tuple[str, ...] = (".jpg", ".jpeg", ".png")
 
 
 def index_images(image_dirs: tuple[Path, ...] | list[Path]) -> dict[str, Path]:
-    """Map `image_id` -> file path across all raw image directories."""
+    """Map `image_id` -> file path across all raw image directories.
+
+    Two directories offering different files for the same `image_id` is
+    ambiguous: whichever one wins silently decides what the model trains and is
+    evaluated on. Raise instead of picking. Listing the same directory twice is
+    not a conflict - it resolves to the same file.
+    """
     index: dict[str, Path] = {}
     for directory in image_dirs:
         if not directory.is_dir():
             continue
         for path in sorted(directory.iterdir()):
-            if path.suffix.lower() in IMAGE_SUFFIXES:
-                index.setdefault(path.stem, path)
+            if path.suffix.lower() not in IMAGE_SUFFIXES:
+                continue
+            existing = index.get(path.stem)
+            if existing is not None and existing.resolve() != path.resolve():
+                raise ValueError(
+                    f"image_id {path.stem!r} appears in multiple image "
+                    f"directories as different files: {existing} and {path}"
+                )
+            index[path.stem] = path
     return index
+
+
+def _validate_labels(values: pd.Series) -> list[int]:
+    """Convert a manifest's `label_idx` column to ints, validating first.
+
+    `int()` truncates: a corrupted 1.9 would become a silent 1 and mislabel
+    every image in that row's class. Each rejection is checked before any
+    conversion happens.
+    """
+    if values.isna().any():
+        raise ValueError(
+            f"manifest contains null label_idx values in rows "
+            f"{values.index[values.isna()].tolist()[:5]}"
+        )
+
+    numeric = pd.to_numeric(values, errors="coerce")
+    non_numeric = values[numeric.isna()]
+    if not non_numeric.empty:
+        raise ValueError(
+            f"manifest contains non-numeric label_idx values: "
+            f"{non_numeric.tolist()[:5]}"
+        )
+
+    fractional = numeric[numeric % 1 != 0]
+    if not fractional.empty:
+        raise ValueError(
+            f"manifest contains non-integral label_idx values: "
+            f"{fractional.tolist()[:5]}"
+        )
+
+    return [int(value) for value in numeric]
 
 
 class HAM10000Dataset(Dataset):
@@ -48,7 +92,7 @@ class HAM10000Dataset(Dataset):
         self._index = index_images(image_dirs)
 
         self.image_ids: list[str] = list(manifest["image_id"])
-        self.labels: list[int] = [int(value) for value in manifest["label_idx"]]
+        self.labels: list[int] = _validate_labels(manifest["label_idx"])
 
         missing = [
             image_id for image_id in self.image_ids if image_id not in self._index
