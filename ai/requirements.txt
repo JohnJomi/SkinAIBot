@@ -1,0 +1,13 @@
+# Dataset pipeline (Phase 2.1). Install into ai/.venv:
+#   ai/.venv/bin/pip install -r ai/requirements.txt
+#
+# Versions are pinned exactly: a run is reproducible from (this file, the
+# config YAML, the git commit). These are the versions the Phase 2.1 suite is
+# verified against on Python 3.12-3.13.
+torch==2.13.0
+torchvision==0.28.0
+numpy==2.5.2
+pandas==3.0.5
+pillow==12.3.0
+pydantic==2.13.4
+pyyaml==6.0.3

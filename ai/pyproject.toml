@@ -1,0 +1,10 @@
+# Tooling configuration for the `ai` package. Intentionally has no [project]
+# table: `ai` is imported from the repository root, not installed as a
+# distribution.
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
