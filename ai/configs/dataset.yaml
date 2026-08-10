@@ -1,0 +1,38 @@
+# Reproducible data configuration for the Phase 2.1 dataset pipeline.
+# Paths are relative to the repository root.
+
+# Drives the split, the DataLoader shuffle order and worker seeding. Changing
+# it invalidates the committed manifests in ai/data_manifests/.
+seed: 42
+
+# HAM10000 ships its images as two archives; extract both under ai/data/raw/.
+# This directory is gitignored (ai/**/data/) - the images are never committed.
+raw_image_dirs:
+  - ai/data/raw/HAM10000_images_part_1
+  - ai/data/raw/HAM10000_images_part_2
+metadata_csv: ai/data/raw/HAM10000_metadata.csv
+
+# Split manifests ARE committed: the split is part of the versioned dataset.
+manifest_dir: ai/data_manifests
+
+# Model-specific input resolution. 380 is EfficientNet-B4's native input size,
+# the current Phase 2 target - not a fixed property of the dataset. resize_size
+# gives evaluation a ~14% margin to centre-crop from.
+image_size: 380
+resize_size: 434
+
+# Approximate per-split image proportions. Lesions are indivisible, so the
+# realised proportions land near these rather than exactly on them.
+splits:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+# ImageNet statistics: Phase 2.2 fine-tunes ImageNet-pretrained weights, whose
+# first layer expects inputs standardised this way.
+normalization:
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+batch_size: 32
+num_workers: 4
