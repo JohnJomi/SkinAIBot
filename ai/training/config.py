@@ -72,6 +72,46 @@ class StageConfig(BaseModel):
     scheduler: SchedulerName = "cosine"
 
 
+class EvaluationTargets(BaseModel):
+    """Minimum acceptable values for the evaluation gate.
+
+    Every field is a floor - higher is better - so one comparison covers them
+    all. Calibration error is deliberately absent: lower is better there, and
+    silently comparing it the wrong way round would pass a badly calibrated
+    model. Unset targets are not checked.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    accuracy: float | None = Field(ge=0.0, le=1.0, default=None)
+    macro_f1: float | None = Field(ge=0.0, le=1.0, default=None)
+    weighted_f1: float | None = Field(ge=0.0, le=1.0, default=None)
+    macro_recall: float | None = Field(ge=0.0, le=1.0, default=None)
+    weighted_recall: float | None = Field(ge=0.0, le=1.0, default=None)
+    macro_auc: float | None = Field(ge=0.0, le=1.0, default=None)
+
+    def as_dict(self) -> dict[str, float]:
+        """The targets that were actually set, by metric name."""
+        return {
+            name: value
+            for name, value in self.model_dump().items()
+            if value is not None
+        }
+
+
+class EvaluationConfig(BaseModel):
+    """Settings for the evaluation and reporting layer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    top_k: int = Field(gt=0, default=3)
+    calibration_bins: int = Field(gt=0, default=15)
+    precision_floor: float = Field(ge=0.0, le=1.0, default=0.5)
+    # Most-confident mistakes listed in the Markdown report.
+    worst_n: int = Field(ge=0, default=10)
+    targets: EvaluationTargets = Field(default_factory=EvaluationTargets)
+
+
 class TrainingConfig(BaseModel):
     """Full training configuration."""
 
@@ -86,6 +126,8 @@ class TrainingConfig(BaseModel):
     checkpoint_dir: Path
     report_dir: Path
     device: DeviceName = "auto"
+    # Optional so configs written before the evaluation layer still load.
+    evaluation: EvaluationConfig = Field(default_factory=EvaluationConfig)
 
     @model_validator(mode="after")
     def _stage_names_must_be_unique(self) -> "TrainingConfig":

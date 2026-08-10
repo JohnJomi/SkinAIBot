@@ -158,6 +158,68 @@ def test_bare_name_allowed_when_not_pretrained():
     assert config.model.pretrained is False
 
 
+def test_shipped_evaluation_block_targets_the_roadmap_metric(shipped_config):
+    evaluation = shipped_config.evaluation
+
+    assert evaluation.top_k == 3
+    assert evaluation.calibration_bins == 15
+    assert evaluation.precision_floor == 0.5
+    # docs/ROADMAP.md sets weighted F1 > 0.85 as the project target.
+    assert evaluation.targets.as_dict() == {"weighted_f1": 0.85}
+
+
+def test_evaluation_block_is_optional():
+    # Configs written before the evaluation layer must still load.
+    payload = _payload()
+    del payload["evaluation"]
+
+    config = TrainingConfig.model_validate(payload)
+    assert config.evaluation.top_k == 3
+    assert config.evaluation.targets.as_dict() == {}
+
+
+def test_unset_targets_are_not_checked():
+    payload = _payload()
+    payload["evaluation"]["targets"] = {}
+
+    assert TrainingConfig.model_validate(payload).evaluation.targets.as_dict() == {}
+
+
+def test_unknown_target_metric_rejected():
+    # A typo must fail at config load, not silently check nothing.
+    payload = _payload()
+    payload["evaluation"]["targets"] = {"f1": 0.85}
+
+    with pytest.raises(ValidationError):
+        TrainingConfig.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("top_k", 0),
+        ("calibration_bins", 0),
+        ("precision_floor", 1.5),
+        ("worst_n", -1),
+        ("unknown_setting", 1),
+    ],
+)
+def test_invalid_evaluation_values_rejected(key, value):
+    payload = _payload()
+    payload["evaluation"][key] = value
+
+    with pytest.raises(ValidationError):
+        TrainingConfig.model_validate(payload)
+
+
+def test_target_outside_the_unit_interval_rejected():
+    payload = _payload()
+    payload["evaluation"]["targets"]["weighted_f1"] = 1.5
+
+    with pytest.raises(ValidationError):
+        TrainingConfig.model_validate(payload)
+
+
 def test_at_least_one_stage_required():
     payload = _payload()
     payload["stages"] = []
