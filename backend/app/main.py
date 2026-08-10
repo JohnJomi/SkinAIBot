@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,7 +12,13 @@ from .ai.schemas import (
 )
 from .api.v1.routers import auth_router, uploads_router
 from .config import get_settings
+from .database.session import get_session_factory
 from .exceptions import register_exception_handlers
+from .repositories import UploadRepository
+from .services.upload_service import reconcile_orphaned_files
+from .storage import LocalFileStorage
+
+logger = logging.getLogger(__name__)
 
 # Resolve settings eagerly: configuration is only read lazily elsewhere, so
 # without this a deployment missing JWT_SECRET_KEY would boot successfully and
@@ -34,6 +42,22 @@ app.add_middleware(
 register_exception_handlers(app)
 app.include_router(auth_router)
 app.include_router(uploads_router)
+
+
+@app.on_event("startup")
+async def _reconcile_uploads() -> None:
+    """Remove stored files not referenced by any Upload row."""
+    try:
+        storage = LocalFileStorage()
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            removed = await reconcile_orphaned_files(
+                storage, UploadRepository(session)
+            )
+        if removed:
+            logger.info("Startup reconciliation removed %d orphaned file(s).", len(removed))
+    except Exception:
+        logger.warning("Upload reconciliation skipped (database unavailable).", exc_info=True)
 
 
 @app.get("/")

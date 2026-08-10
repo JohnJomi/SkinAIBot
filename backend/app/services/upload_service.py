@@ -1,6 +1,7 @@
 """Upload business logic."""
 
 import io
+import logging
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -111,10 +112,31 @@ class UploadService:
         an orphaned file is invisible to users and reclaimable, whereas a
         committed row whose file was deleted is a permanently broken record.
         """
-        if isinstance(exc, Exception):
-            # A database error rolls the transaction back, so nothing persisted.
-            return True
-        # Cancellation (or another BaseException) delivered before COMMIT was
-        # issued cannot have persisted anything either. Once COMMIT is in
-        # flight the outcome is unknowable from here, so keep the file.
-        return not self.repository.commit_started
+        # Once COMMIT has been issued the outcome is unknowable: the server
+        # may have committed even though the client received an error.  Keep
+        # the file so a committed row never points at a missing file.
+        if self.repository.commit_started:
+            return False
+        # Before COMMIT, the transaction cannot have been persisted regardless
+        # of whether we got a regular Exception or a CancelledError.
+        return True
+
+
+logger = logging.getLogger(__name__)
+
+
+async def reconcile_orphaned_files(
+    storage: LocalFileStorage,
+    repository: UploadRepository,
+) -> list[str]:
+    """Delete stored files that are not referenced by any Upload row.
+
+    Returns the list of filenames that were removed.
+    """
+    on_disk = storage.list_stored_files()
+    in_db = await repository.get_all_stored_filenames()
+    orphans = on_disk - in_db
+    for name in sorted(orphans):
+        storage.delete(name)
+        logger.info("Removed orphaned upload file: %s", name)
+    return sorted(orphans)

@@ -229,15 +229,36 @@ async def test_cancellation_before_commit_still_deletes_file(upload_env):
 
 
 @pytest.mark.asyncio
-async def test_db_error_after_commit_flag_still_deletes_file(upload_env):
-    """A normal DB error means the transaction rolled back, committed flag or not."""
+async def test_db_error_after_commit_keeps_file(upload_env):
+    """An error during COMMIT has ambiguous outcome — the file must be kept."""
     build, upload_dir = upload_env
     service = build(error_after_commit=RuntimeError("connection reset"))
 
     with pytest.raises(RuntimeError):
         await service.upload_image("user-1", _StubUploadFile(make_image_bytes("PNG")))
 
-    assert stored_files(upload_dir) == []
+    stored_filename = service.repository.committed_rows[0]["stored_filename"]
+    assert stored_files(upload_dir) == [stored_filename]
+
+
+@pytest.mark.asyncio
+async def test_exception_during_commit_does_not_delete_file(upload_env):
+    """Regression: an exception raised mid-COMMIT must not delete the stored file.
+
+    The server may have committed the row even though the client got an error,
+    so deleting the file would leave a broken DB record.
+    """
+    build, upload_dir = upload_env
+    service = build(error_after_commit=OSError("connection reset by peer"))
+
+    with pytest.raises(OSError):
+        await service.upload_image("user-1", _StubUploadFile(make_image_bytes("PNG")))
+
+    # commit_started is True, so the file must survive.
+    assert service.repository.commit_started is True
+    stored_filename = service.repository.committed_rows[0]["stored_filename"]
+    assert stored_files(upload_dir) == [stored_filename]
+    assert (upload_dir / stored_filename).exists()
 
 
 @pytest.mark.asyncio

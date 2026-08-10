@@ -1,5 +1,6 @@
 """Data access for Upload records."""
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Upload
@@ -45,3 +46,8 @@ class UploadRepository:
         self.commit_started = True
         await self.session.commit()
         return upload
+
+    async def get_all_stored_filenames(self) -> set[str]:
+        """Return every stored_filename referenced by an Upload row."""
+        result = await self.session.execute(select(Upload.stored_filename))
+        return set(result.scalars().all())

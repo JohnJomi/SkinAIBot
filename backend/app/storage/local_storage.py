@@ -54,5 +54,18 @@ class LocalFileStorage:
         """Remove a stored file. Safe to call when the file is already gone."""
         self._stored_path(stored_name).unlink(missing_ok=True)
 
+    def list_stored_files(self) -> set[str]:
+        """Return the set of filenames in the upload directory.
+
+        Only includes files whose extension matches a known upload format,
+        so unrelated files (e.g. .gitkeep) are never touched.
+        """
+        known_extensions = set(FORMAT_EXTENSIONS.values())
+        return {
+            p.name
+            for p in self.upload_dir.iterdir()
+            if p.is_file() and p.suffix in known_extensions
+        }
+
     def url_for(self, stored_name: str) -> str:
         return f"/uploads/{stored_name}"
