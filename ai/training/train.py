@@ -74,8 +74,10 @@ def configure_determinism(device: torch.device) -> None:
     here, since the DataLoader order and augmentation both derive from the
     seeded generators.
 
-    `warn_only=True`: prefer a warning over aborting a long run when an op has
-    no deterministic implementation.
+    Strict mode: an op with no deterministic implementation raises rather than
+    warning. A warning scrolls past in a long run and leaves a checkpoint that
+    cannot be reproduced but looks like it can - failing at the offending op is
+    the honest outcome, and points straight at what to replace.
     """
     if device.type != "cuda":
         return
@@ -87,7 +89,7 @@ def configure_determinism(device: torch.device) -> None:
 
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    torch.use_deterministic_algorithms(True, warn_only=True)
+    torch.use_deterministic_algorithms(True)
 
 
 def build_criterion(

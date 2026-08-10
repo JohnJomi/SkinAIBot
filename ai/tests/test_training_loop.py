@@ -311,11 +311,12 @@ def determinism_state():
         torch.backends.cudnn.benchmark,
         torch.are_deterministic_algorithms_enabled(),
         os.environ.get("CUBLAS_WORKSPACE_CONFIG"),
+        torch.is_deterministic_algorithms_warn_only_enabled(),
     )
     yield
     torch.backends.cudnn.deterministic = saved[0]
     torch.backends.cudnn.benchmark = saved[1]
-    torch.use_deterministic_algorithms(saved[2], warn_only=True)
+    torch.use_deterministic_algorithms(saved[2], warn_only=saved[4])
     if saved[3] is None:
         os.environ.pop("CUBLAS_WORKSPACE_CONFIG", None)
     else:
@@ -326,6 +327,7 @@ def test_cuda_determinism_flags_are_set(determinism_state):
     # No GPU needed: these are global settings, and nothing is allocated.
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
+    torch.use_deterministic_algorithms(False)
     os.environ.pop("CUBLAS_WORKSPACE_CONFIG", None)
 
     configure_determinism(torch.device("cuda"))
@@ -335,6 +337,9 @@ def test_cuda_determinism_flags_are_set(determinism_state):
     # nondeterminism, so it has to be off.
     assert torch.backends.cudnn.benchmark is False
     assert torch.are_deterministic_algorithms_enabled() is True
+    # Strict, not warn_only: an op with no deterministic kernel must raise
+    # rather than warn, so a run cannot quietly become unreproducible.
+    assert torch.is_deterministic_algorithms_warn_only_enabled() is False
     assert os.environ["CUBLAS_WORKSPACE_CONFIG"] == ":4096:8"
 
 
