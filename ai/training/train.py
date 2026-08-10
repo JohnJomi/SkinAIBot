@@ -14,6 +14,7 @@ evaluation happens once, in `ai.training.evaluate`, after model selection.
 
 import argparse
 import json
+import os
 import random
 from pathlib import Path
 from typing import Any
@@ -59,6 +60,36 @@ def seed_everything(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
 
 
+def configure_determinism(device: torch.device) -> None:
+    """Make CUDA kernel selection deterministic, where PyTorch supports it.
+
+    Seeding alone does not make a CUDA run repeatable: cuDNN benchmarks several
+    convolution algorithms and picks the fastest for the observed shapes, some
+    kernels accumulate in nondeterministic order, and cuBLAS reuses workspaces
+    across streams. Those are settings, not seeds.
+
+    CPU and MPS are deliberately left untouched. `use_deterministic_algorithms`
+    is global, and on CPU it turns ops that have no deterministic kernel into
+    hard errors - a behaviour change on devices that were already reproducible
+    here, since the DataLoader order and augmentation both derive from the
+    seeded generators.
+
+    `warn_only=True`: prefer a warning over aborting a long run when an op has
+    no deterministic implementation.
+    """
+    if device.type != "cuda":
+        return
+
+    # Required for deterministic cuBLAS; read when the cuBLAS handle is first
+    # created, so it must be set before the first matmul. setdefault leaves an
+    # operator-supplied value alone.
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True, warn_only=True)
+
+
 def build_criterion(
     training_config: TrainingConfig, train_labels: list[int]
 ) -> nn.CrossEntropyLoss:
@@ -76,9 +107,30 @@ def build_criterion(
     )
 
 
+def _json_safe_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Replace NaN metrics with None so history.json is valid JSON.
+
+    macro_auc is NaN whenever no class had both outcomes in the validation
+    split. Writing it as null matches the evaluation report; leaving it as NaN
+    would emit a bare `NaN` literal that strict JSON parsers reject.
+    """
+    return [
+        {
+            key: (None if isinstance(value, float) and value != value else value)
+            for key, value in entry.items()
+        }
+        for entry in history
+    ]
+
+
 def _build_scheduler(
     optimizer: torch.optim.Optimizer, stage: StageConfig
 ) -> torch.optim.lr_scheduler.LRScheduler | None:
+    """Per-stage LR schedule; None when the stage holds its rate fixed.
+
+    Cosine annealing spans exactly the stage's epochs, so each stage completes
+    its own decay rather than inheriting a partly-decayed rate.
+    """
     if stage.scheduler == "cosine":
         return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=stage.epochs)
     return None
@@ -95,6 +147,7 @@ def run_training(
     """
     seed_everything(data_config.seed)
     device = resolve_device(training_config.device)
+    configure_determinism(device)
 
     loaders = build_dataloaders(
         data_config,
@@ -184,7 +237,10 @@ def run_training(
 
     history_path = training_config.checkpoint_dir / HISTORY_NAME
     history_path.parent.mkdir(parents=True, exist_ok=True)
-    history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+    history_path.write_text(
+        json.dumps(_json_safe_history(history), indent=2, allow_nan=False),
+        encoding="utf-8",
+    )
 
     print(
         f"\nbest {tracker.metric_name}={tracker.best_value:.4f} "
@@ -194,6 +250,7 @@ def run_training(
 
 
 def main() -> None:
+    """CLI entry point: load both configs and run every training stage."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-config", type=Path, default=DEFAULT_DATA_CONFIG_PATH)
     parser.add_argument(

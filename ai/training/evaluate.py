@@ -1,6 +1,10 @@
 """CLI: evaluate a selected checkpoint on the held-out test split.
 
-    python -m ai.training.evaluate [--checkpoint PATH] [--config PATH ...]
+    python -m ai.training.evaluate
+        [--data-config PATH]      dataset config; default ai/configs/dataset.yaml
+        [--training-config PATH]  training config; default ai/configs/training.yaml
+        [--checkpoint PATH]       default: best.pt in the configured
+                                  checkpoint_dir
 
 This is the only module that reads test images. It runs once, after training
 has chosen a checkpoint on validation, and it neither trains nor tunes: the
@@ -71,6 +75,7 @@ def evaluate_checkpoint(
 def _write_report(
     report_dir: Path, report: dict[str, Any], confusion_matrix: list[list[int]]
 ) -> None:
+    """Write report.json and confusion_matrix.csv into `report_dir`."""
     report_dir.mkdir(parents=True, exist_ok=True)
 
     # NaN is not valid JSON, and `default=` is never consulted for floats, so
@@ -108,6 +113,11 @@ def _json_safe(value: Any) -> Any:
 
 
 def _print_summary(metrics: dict[str, Any], report: dict[str, Any]) -> None:
+    """Print the headline metrics and the per-class table to stdout.
+
+    Undefined AUCs print as "undefined" rather than a number, so a class that
+    could not be scored is never mistaken for one that scored badly.
+    """
     print(f"\nTest split: {report['n_images']} images")
     print(f"  accuracy      {metrics['accuracy']:.4f}")
     print(f"  macro F1      {metrics['macro_f1']:.4f}")
@@ -126,6 +136,7 @@ def _print_summary(metrics: dict[str, Any], report: dict[str, Any]) -> None:
 
 
 def main() -> None:
+    """CLI entry point: score a checkpoint, defaulting to best.pt."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-config", type=Path, default=DEFAULT_DATA_CONFIG_PATH)
     parser.add_argument(

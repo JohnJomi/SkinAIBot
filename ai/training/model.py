@@ -122,6 +122,7 @@ def trainable_parameters(model: nn.Module) -> Iterator[torch.nn.Parameter]:
 
 
 def count_trainable_parameters(model: nn.Module) -> int:
+    """How many parameters the current stage will update. Reported per stage."""
     return sum(p.numel() for p in trainable_parameters(model))
 
 

@@ -119,6 +119,45 @@ def test_invalid_stage_values_rejected(key, value):
         TrainingConfig.model_validate(payload)
 
 
+@pytest.mark.parametrize(
+    "name",
+    [
+        "tf_efficientnet_b4",  # bare architecture: follows timm's default tag
+        "tf_efficientnet_b4.",  # empty tag
+        ".aa_in1k",  # empty architecture
+        "",
+    ],
+)
+def test_pretrained_without_an_explicit_tag_rejected(name):
+    payload = _payload()
+    payload["model"]["name"] = name
+    payload["model"]["pretrained"] = True
+
+    with pytest.raises(ValidationError, match="no explicit pretrained tag"):
+        TrainingConfig.model_validate(payload)
+
+
+def test_tagged_name_accepted_when_pretrained():
+    payload = _payload()
+    payload["model"]["name"] = "tf_efficientnet_b4.ns_jft_in1k"
+
+    assert (
+        TrainingConfig.model_validate(payload).model.name
+        == "tf_efficientnet_b4.ns_jft_in1k"
+    )
+
+
+def test_bare_name_allowed_when_not_pretrained():
+    # Nothing is downloaded, so there is no tag to pin.
+    payload = _payload()
+    payload["model"]["name"] = "tf_efficientnet_b4"
+    payload["model"]["pretrained"] = False
+
+    config = TrainingConfig.model_validate(payload)
+    assert config.model.name == "tf_efficientnet_b4"
+    assert config.model.pretrained is False
+
+
 def test_at_least_one_stage_required():
     payload = _payload()
     payload["stages"] = []

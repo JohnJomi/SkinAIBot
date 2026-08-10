@@ -34,6 +34,27 @@ class ModelConfig(BaseModel):
     pretrained: bool = True
     drop_rate: float = Field(ge=0.0, lt=1.0, default=0.4)
 
+    @model_validator(mode="after")
+    def _pretrained_requires_an_explicit_tag(self) -> "ModelConfig":
+        """A bare architecture name silently follows timm's default tag.
+
+        Only enforced when actually loading pretrained weights: with
+        `pretrained=False` nothing is downloaded, so the tag carries no meaning
+        and a bare architecture name is fine.
+        """
+        if not self.pretrained:
+            return self
+
+        architecture, separator, tag = self.name.partition(".")
+        if not (separator and architecture and tag):
+            raise ValueError(
+                f"model name {self.name!r} carries no explicit pretrained tag; "
+                "use 'architecture.tag' (e.g. 'tf_efficientnet_b4.aa_in1k') so "
+                "the weights cannot change when timm's default tag for the "
+                "architecture does"
+            )
+        return self
+
 
 class StageConfig(BaseModel):
     """One fine-tuning stage.
@@ -68,6 +89,7 @@ class TrainingConfig(BaseModel):
 
     @model_validator(mode="after")
     def _stage_names_must_be_unique(self) -> "TrainingConfig":
+        """Stage names label checkpoints and history rows, so they must differ."""
         names = [stage.name for stage in self.stages]
         duplicates = sorted({name for name in names if names.count(name) > 1})
         if duplicates:
@@ -79,6 +101,7 @@ class TrainingConfig(BaseModel):
 
     @property
     def total_epochs(self) -> int:
+        """Epochs across every stage - the length of a full training run."""
         return sum(stage.epochs for stage in self.stages)
 
 
