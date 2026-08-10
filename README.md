@@ -38,8 +38,20 @@ after it completes. A fresh volume is therefore migrated to head on first boot.
 
 ### Migrations
 
-To create a migration after changing a model:
+Migrations are applied automatically on startup (see above). To create a new one
+after changing a model, mount the versions directory for that one command so the
+generated file lands on the host instead of inside the throwaway container:
 
 ```bash
-docker compose run --rm migrate alembic revision --autogenerate -m "describe change"
+docker compose run --rm -v "$PWD/backend/alembic/versions:/app/backend/alembic/versions" migrate alembic revision --autogenerate -m "describe change"
+```
+
+The new file appears in `backend/alembic/versions/`. Review it before committing:
+autogenerate does not detect every change, and on Linux the file is created as
+root, so you may need `sudo chown "$USER"` on it.
+
+Apply pending migrations without restarting the stack:
+
+```bash
+docker compose run --rm migrate alembic upgrade head
 ```

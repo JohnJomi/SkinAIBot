@@ -1,5 +1,4 @@
 import asyncio
-import os
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -16,22 +15,10 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 # what autogenerate diffs against.
 from app import models  # noqa: E402,F401
 from app.database import Base  # noqa: E402
-
-
-def _database_url() -> str:
-    """Resolve the database URL without requiring the full app configuration.
-
-    Migrations need database credentials but no application secrets, so a
-    migration job can run with only DATABASE_URL set. Fall back to Settings for
-    local runs driven by a .env file.
-    """
-    url = os.getenv("DATABASE_URL")
-    if url:
-        return url
-
-    from app.config import get_settings
-
-    return get_settings().database_url
+from app.database.migration_url import (  # noqa: E402
+    escape_for_alembic_config,
+    resolve_database_url,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -42,7 +29,10 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", _database_url())
+# The raw URL is what we connect with; only the copy handed to Alembic's
+# ConfigParser is escaped.
+DATABASE_URL = resolve_database_url()
+config.set_main_option("sqlalchemy.url", escape_for_alembic_config(DATABASE_URL))
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -66,9 +56,8 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=DATABASE_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -91,8 +80,13 @@ async def run_async_migrations() -> None:
 
     """
 
+    configuration = config.get_section(config.config_ini_section, {})
+    # Connect with the unescaped URL rather than whatever survived the
+    # ConfigParser round-trip.
+    configuration["sqlalchemy.url"] = DATABASE_URL
+
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

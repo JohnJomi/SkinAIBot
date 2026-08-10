@@ -97,8 +97,24 @@ class UploadService:
                 content_type=FORMAT_CONTENT_TYPES[image_format],
                 size_bytes=size_bytes,
             )
-        except BaseException:
-            # The row that would have pointed at this file was never committed,
-            # so drop the file rather than leaking an unreferenced one.
-            self.storage.delete(stored_filename)
+        except BaseException as exc:
+            if self._insert_definitely_failed(exc):
+                # Nothing references this file, so drop it rather than leaking it.
+                self.storage.delete(stored_filename)
             raise
+
+    def _insert_definitely_failed(self, exc: BaseException) -> bool:
+        """Whether it is safe to delete the stored file after a failed insert.
+
+        Deleting is only safe when we know no committed row points at the file.
+        Getting this wrong in the other direction is worse than leaking a file:
+        an orphaned file is invisible to users and reclaimable, whereas a
+        committed row whose file was deleted is a permanently broken record.
+        """
+        if isinstance(exc, Exception):
+            # A database error rolls the transaction back, so nothing persisted.
+            return True
+        # Cancellation (or another BaseException) delivered before COMMIT was
+        # issued cannot have persisted anything either. Once COMMIT is in
+        # flight the outcome is unknowable from here, so keep the file.
+        return not self.repository.commit_started

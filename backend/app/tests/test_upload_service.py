@@ -1,3 +1,4 @@
+import asyncio
 import io
 
 import pytest
@@ -30,13 +31,34 @@ class _StubUploadFile:
 
 
 class _StubUploadRepository:
-    def __init__(self, error: Exception | None = None):
+    """Mirrors UploadRepository's contract: commit_started flips at COMMIT.
+
+    `error` is raised before the commit is issued (a normal DB failure);
+    `error_after_commit` is raised once the row is already durable, which is how
+    a cancellation arriving mid-commit looks to the caller.
+    """
+
+    def __init__(
+        self,
+        error: Exception | None = None,
+        error_after_commit: BaseException | None = None,
+    ):
         self.error = error
+        self.error_after_commit = error_after_commit
+        self.commit_started = False
+        self.committed_rows: list[dict] = []
         self.created = None
 
     async def create(self, **kwargs):
         if self.error is not None:
             raise self.error
+
+        self.commit_started = True
+        self.committed_rows.append(kwargs)
+
+        if self.error_after_commit is not None:
+            raise self.error_after_commit
+
         self.created = kwargs
         return kwargs
 
@@ -52,9 +74,12 @@ def upload_env(tmp_path, monkeypatch):
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path))
     get_settings.cache_clear()
 
-    def build(repository_error: Exception | None = None) -> UploadService:
+    def build(
+        repository_error: Exception | None = None,
+        error_after_commit: BaseException | None = None,
+    ) -> UploadService:
         service = UploadService(_StubSession())
-        service.repository = _StubUploadRepository(repository_error)
+        service.repository = _StubUploadRepository(repository_error, error_after_commit)
         return service
 
     try:
@@ -164,6 +189,54 @@ async def test_stored_file_is_removed_when_db_persistence_fails(upload_env):
 
     # The original exception is preserved, not masked by cleanup.
     assert exc_info.value is db_error
+    assert stored_files(upload_dir) == []
+
+
+@pytest.mark.asyncio
+async def test_cancellation_after_commit_keeps_file_and_row(upload_env):
+    """Cancellation between COMMIT and returning must not delete a committed file.
+
+    Regression: cleanup used to fire on any BaseException, so a client
+    disconnect landing just after the commit deleted a file that a durable row
+    still pointed at.
+    """
+    build, upload_dir = upload_env
+    cancellation = asyncio.CancelledError()
+    service = build(error_after_commit=cancellation)
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.upload_image("user-1", _StubUploadFile(make_image_bytes("PNG")))
+
+    # The row is committed...
+    assert len(service.repository.committed_rows) == 1
+    stored_filename = service.repository.committed_rows[0]["stored_filename"]
+    # ...so the file it references must survive.
+    assert stored_files(upload_dir) == [stored_filename]
+    assert (upload_dir / stored_filename).exists()
+
+
+@pytest.mark.asyncio
+async def test_cancellation_before_commit_still_deletes_file(upload_env):
+    """Nothing was committed, so the file is a genuine orphan and must go."""
+    build, upload_dir = upload_env
+    service = build(repository_error=asyncio.CancelledError())
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.upload_image("user-1", _StubUploadFile(make_image_bytes("PNG")))
+
+    assert service.repository.committed_rows == []
+    assert stored_files(upload_dir) == []
+
+
+@pytest.mark.asyncio
+async def test_db_error_after_commit_flag_still_deletes_file(upload_env):
+    """A normal DB error means the transaction rolled back, committed flag or not."""
+    build, upload_dir = upload_env
+    service = build(error_after_commit=RuntimeError("connection reset"))
+
+    with pytest.raises(RuntimeError):
+        await service.upload_image("user-1", _StubUploadFile(make_image_bytes("PNG")))
+
     assert stored_files(upload_dir) == []
 
 
