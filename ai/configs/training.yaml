@@ -1,0 +1,60 @@
+# Reproducible training configuration for the Phase 2.2 fine-tuning pipeline.
+# Paths are relative to the repository root.
+#
+# The random seed is NOT defined here: it lives in ai/configs/dataset.yaml and
+# is shared with the split, so a run is described by (dataset config, this
+# config, git commit).
+
+# The exact pretrained weight tag, not a bare architecture name - timm's
+# default tag for an architecture can change between releases, which would
+# silently change what the model was initialised from.
+#
+# tf_efficientnet_b4.aa_in1k: the original TensorFlow EfficientNet-B4 weights,
+# trained on ImageNet-1K only with AutoAugment, native 380x380 input.
+# Alternatives, both a config edit away:
+#   tf_efficientnet_b4.ap_in1k      ImageNet-1K + AdvProp, often transfers better
+#   tf_efficientnet_b4.ns_jft_in1k  Noisy Student; stronger, but pretrained on
+#                                   JFT-300M rather than ImageNet-1K alone
+model:
+  name: tf_efficientnet_b4.aa_in1k
+  pretrained: true
+  drop_rate: 0.4
+
+# Progressive unfreezing is expressed entirely as data. Adding a third stage
+# (say unfreeze_blocks: 4 at a smaller lr) is an edit here, not in Python:
+# train.py iterates this list and never refers to a stage count.
+#
+# unfreeze_blocks counts from the END of the backbone. EfficientNet-B4 has 7
+# blocks; 0 means the classification head alone.
+stages:
+  - name: head
+    epochs: 8
+    lr: 1.0e-3
+    weight_decay: 1.0e-4
+    unfreeze_blocks: 0
+    scheduler: cosine
+  - name: finetune
+    epochs: 12
+    lr: 1.0e-4
+    weight_decay: 1.0e-4
+    unfreeze_blocks: 2
+    scheduler: cosine
+
+# One strategy, never two: weighted sampling and a weighted loss both correct
+# the same imbalance, and combining them over-corrects the rare classes.
+# One of: none | weighted_sampler | weighted_loss
+imbalance_strategy: weighted_loss
+
+label_smoothing: 0.0
+
+# Validation metric deciding which epoch becomes best.pt. macro_recall is the
+# default because a false negative on a malignant lesion is the costly error
+# here, and macro averaging weights the rare malignant classes equally with nv.
+# One of: accuracy | macro_f1 | macro_recall
+monitor: macro_recall
+
+checkpoint_dir: ai/checkpoints
+report_dir: ai/reports
+
+# One of: auto | cpu | cuda | mps
+device: auto

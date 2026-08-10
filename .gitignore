@@ -31,6 +31,8 @@ ai/**/data/
 ai/**/datasets/
 ai/**/models/
 uploads/
+# Training run outputs (checkpoints + history.json); reports/ IS committed.
+ai/checkpoints/
 *.pt
 *.pth
 *.h5
