@@ -244,6 +244,32 @@ def test_predictions_csv_has_one_row_per_image(tmp_path):
         assert f"p_{code}" in rows[0]
 
 
+def test_predictions_csv_handles_rows_with_different_top_k_lengths(tmp_path):
+    # A short row used to raise IndexError and cost the whole report.
+    ragged = [
+        PREDICTIONS[0],
+        {
+            **PREDICTIONS[1],
+            "image_id": "ISIC_0000003",
+            "top_k": [(CLASS_CODES[1], 0.60)],
+        },
+    ]
+    path = tmp_path / "predictions.csv"
+    write_predictions_csv(path, ragged)
+
+    with path.open(encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+
+    # Header is sized to the widest row.
+    assert "top3_code" in rows[0]
+    assert rows[0]["top3_code"] == CLASS_CODES[2]
+    # The short row gets blanks, not a crash and not a fabricated value.
+    assert rows[1]["top1_code"] == CLASS_CODES[1]
+    assert rows[1]["top2_code"] == ""
+    assert rows[1]["top2_prob"] == ""
+    assert rows[1]["top3_code"] == ""
+
+
 def test_reliability_csv_leaves_empty_bins_blank(tmp_path):
     bins = [
         {

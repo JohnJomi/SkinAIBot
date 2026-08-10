@@ -113,7 +113,12 @@ def targets_passed(results: list[TargetResult]) -> bool:
 
 
 def write_predictions_csv(path: Path, predictions: list[dict[str, Any]]) -> None:
-    """One row per image: truth, prediction, confidence, Top-K and all probs."""
+    """One row per image: truth, prediction, confidence, Top-K and all probs.
+
+    The header is sized to the widest Top-K present. Rows carrying fewer ranks
+    get blank cells rather than raising, so one short row cannot cost the whole
+    report - a ragged batch is a reason to look at the data, not to lose it.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     top_k = max((len(row["top_k"]) for row in predictions), default=0)
 
@@ -133,9 +138,13 @@ def write_predictions_csv(path: Path, predictions: list[dict[str, Any]]) -> None
                 row["correct"],
                 f"{row['confidence']:.6f}",
             ]
+            ranked = row["top_k"]
             for rank in range(top_k):
-                code, probability = row["top_k"][rank]
-                record += [code, f"{probability:.6f}"]
+                if rank < len(ranked):
+                    code, probability = ranked[rank]
+                    record += [code, f"{probability:.6f}"]
+                else:
+                    record += ["", ""]
             record += [f"{row['probabilities'][code]:.6f}" for code in CLASS_CODES]
             writer.writerow(record)
 

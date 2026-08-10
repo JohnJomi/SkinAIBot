@@ -320,6 +320,11 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def _format_metric(value: float) -> str:
+    """Format a metric for the console, naming an undefined value."""
+    return "undefined" if value != value else f"{value:.4f}"
+
+
 def _print_summary(metrics: dict[str, Any], report: dict[str, Any]) -> None:
     """Print the headline metrics and the per-class table to stdout.
 
@@ -330,7 +335,10 @@ def _print_summary(metrics: dict[str, Any], report: dict[str, Any]) -> None:
     print(f"  accuracy      {metrics['accuracy']:.4f}")
     print(f"  macro F1      {metrics['macro_f1']:.4f}")
     print(f"  macro recall  {metrics['macro_recall']:.4f}")
-    print(f"  macro AUC     {metrics['macro_auc']:.4f}")
+    # "undefined", not "nan": consistent with the per-class column below and
+    # with the JSON/Markdown reports, where an unmeasurable AUC is never a
+    # number.
+    print(f"  macro AUC     {_format_metric(metrics['macro_auc'])}")
 
     header = f"\n{'class':>6}{'recall':>10}{'f1':>10}{'auc':>10}{'support':>10}"
     print(header)

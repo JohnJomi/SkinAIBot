@@ -16,6 +16,7 @@ when the tag says validation.
 
 import hashlib
 import json
+from collections import Counter
 from dataclasses import InitVar, dataclass
 from pathlib import Path
 from typing import Any
@@ -41,8 +42,21 @@ EVALUABLE_SPLITS: tuple[str, ...] = ("val", "test")
 _FACTORY_TOKEN = object()
 
 
+# EfficientNet-B4 checkpoints run to hundreds of megabytes, and reading one
+# whole into memory just to hash it is avoidable.
+_HASH_CHUNK_BYTES = 1024 * 1024
+
+
 def _file_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """SHA-256 of a file, read in fixed-size chunks.
+
+    Identical to hashing the whole byte string; only the peak memory differs.
+    """
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(_HASH_CHUNK_BYTES), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def manifest_fingerprint(path: Path) -> str:
@@ -152,14 +166,7 @@ def build_split_predictions(
         )
 
     manifest_path = data_config.manifest_path(split)
-    expected_ids = set(load_manifest(manifest_path)["image_id"])
-    unexpected = sorted(set(image_ids) - expected_ids)
-    if unexpected:
-        raise ValueError(
-            f"{len(unexpected)} images in the {split!r} loader are absent from "
-            f"its manifest; first: {unexpected[:5]}. The loader and the "
-            "configured manifest disagree"
-        )
+    _verify_ids_match_manifest(split, image_ids, load_manifest(manifest_path))
 
     return SplitPredictions(
         split=split,
@@ -168,6 +175,58 @@ def build_split_predictions(
         y_true=y_true,
         y_prob=y_prob,
         token=_FACTORY_TOKEN,
+    )
+
+
+def _verify_ids_match_manifest(
+    split: str, image_ids: tuple[str, ...], manifest: Any
+) -> None:
+    """The loader must reproduce the split's manifest exactly, in order.
+
+    Sequence equality is the real requirement. Per-image rows are matched to
+    the manifest positionally, so a loader holding the right images in the
+    wrong order produces a report where every row is mislabelled - and a set
+    comparison would pass it. Coverage in both directions and duplicate
+    rejection fall out of the same check, and are reported separately only to
+    make the failure legible.
+    """
+    manifest_ids = tuple(manifest["image_id"])
+    if image_ids == manifest_ids:
+        return
+
+    problems: list[str] = []
+
+    duplicated = sorted(
+        image_id for image_id, count in Counter(image_ids).items() if count > 1
+    )
+    if duplicated:
+        problems.append(
+            f"{len(duplicated)} duplicate loader ids (first: {duplicated[:5]})"
+        )
+
+    unexpected = sorted(set(image_ids) - set(manifest_ids))
+    if unexpected:
+        problems.append(
+            f"{len(unexpected)} loader images are absent from the manifest "
+            f"(first: {unexpected[:5]})"
+        )
+
+    missing = sorted(set(manifest_ids) - set(image_ids))
+    if missing:
+        problems.append(
+            f"{len(missing)} manifest images were not produced by the loader "
+            f"(first: {missing[:5]})"
+        )
+
+    if not problems:
+        # Same images, different order: positional alignment would silently
+        # attach every prediction to the wrong row.
+        problems.append(
+            "the loader yields the manifest's images in a different order"
+        )
+
+    raise ValueError(
+        f"the {split!r} loader and its manifest disagree: " + "; ".join(problems)
     )
 
 

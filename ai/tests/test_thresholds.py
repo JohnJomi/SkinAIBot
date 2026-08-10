@@ -1,9 +1,11 @@
 """Thresholds are fitted on validation only, and frozen once fitted."""
 
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from torch.utils.data import SequentialSampler
 
 from ai.preprocessing.datamodule import build_dataloaders
 from ai.preprocessing.labels import CLASS_CODES, NUM_CLASSES
@@ -114,6 +116,131 @@ def test_factory_rejects_labels_that_are_not_the_splits_own(
         build_split_predictions(
             loaders, "val", prepared_config, foreign, val_predictions.y_prob
         )
+
+
+class _StubDataset:
+    """Minimal stand-in exposing what the factory reads off a dataset."""
+
+    def __init__(self, image_ids, labels):
+        self.image_ids = list(image_ids)
+        self.labels = list(labels)
+
+    def __len__(self):
+        return len(self.image_ids)
+
+
+class _StubLoader:
+    """A sequential loader over a stub dataset."""
+
+    def __init__(self, dataset):
+        self.dataset = dataset
+        self.sampler = SequentialSampler(dataset)
+
+
+def _loaders_yielding(split: str, image_ids, labels):
+    """A `loaders`-shaped object whose split yields exactly these ids."""
+    return SimpleNamespace(**{split: _StubLoader(_StubDataset(image_ids, labels))})
+
+
+def _manifest_rows(prepared_config, split: str):
+    from ai.preprocessing.dataset import load_manifest
+
+    manifest = load_manifest(prepared_config.manifest_path(split))
+    return list(manifest["image_id"]), [int(x) for x in manifest["label_idx"]]
+
+
+def test_duplicate_loader_image_ids_rejected(prepared_config):
+    ids, labels = _manifest_rows(prepared_config, "val")
+    # Second row replaced by a copy of the first: still the right length, and
+    # every id is in the manifest, so only a duplicate check catches it.
+    duplicated_ids = [ids[0], ids[0], *ids[2:]]
+    duplicated_labels = [labels[0], labels[0], *labels[2:]]
+    loaders = _loaders_yielding("val", duplicated_ids, duplicated_labels)
+
+    with pytest.raises(ValueError, match="duplicate loader ids"):
+        build_split_predictions(
+            loaders,
+            "val",
+            prepared_config,
+            duplicated_labels,
+            _confident_probabilities(np.array(duplicated_labels)),
+        )
+
+
+def test_loader_missing_a_manifest_image_rejected(prepared_config):
+    ids, labels = _manifest_rows(prepared_config, "val")
+    # A loader that silently drops an image: every id it yields is in the
+    # manifest, so only the manifest-to-loader direction catches this.
+    loaders = _loaders_yielding("val", ids[:-1], labels[:-1])
+
+    with pytest.raises(ValueError, match="were not produced by the loader"):
+        build_split_predictions(
+            loaders,
+            "val",
+            prepared_config,
+            labels[:-1],
+            _confident_probabilities(np.array(labels[:-1])),
+        )
+
+
+def test_loader_with_an_unexpected_image_rejected(prepared_config):
+    ids, labels = _manifest_rows(prepared_config, "val")
+    extended_ids = [*ids, "ISIC_not_in_manifest"]
+    extended_labels = [*labels, 0]
+    loaders = _loaders_yielding("val", extended_ids, extended_labels)
+
+    with pytest.raises(ValueError, match="absent from the manifest"):
+        build_split_predictions(
+            loaders,
+            "val",
+            prepared_config,
+            extended_labels,
+            _confident_probabilities(np.array(extended_labels)),
+        )
+
+
+def test_mismatch_error_names_the_split(prepared_config):
+    ids, labels = _manifest_rows(prepared_config, "val")
+    loaders = _loaders_yielding("val", ids[:-1], labels[:-1])
+
+    with pytest.raises(ValueError, match="the 'val' loader and its manifest"):
+        build_split_predictions(
+            loaders,
+            "val",
+            prepared_config,
+            labels[:-1],
+            _confident_probabilities(np.array(labels[:-1])),
+        )
+
+
+def test_reordered_loader_ids_rejected(prepared_config):
+    # Same images, same labels, different order. Set comparison passes this;
+    # positional alignment would attach every prediction to the wrong row.
+    ids, labels = _manifest_rows(prepared_config, "val")
+    order = [1, 0, *range(2, len(ids))]
+    shuffled_ids = [ids[i] for i in order]
+    shuffled_labels = [labels[i] for i in order]
+    loaders = _loaders_yielding("val", shuffled_ids, shuffled_labels)
+
+    with pytest.raises(ValueError, match="different order"):
+        build_split_predictions(
+            loaders,
+            "val",
+            prepared_config,
+            shuffled_labels,
+            _confident_probabilities(np.array(shuffled_labels)),
+        )
+
+
+def test_matching_loader_still_accepted(loaders, prepared_config):
+    # The tightened check must not reject the real, correct loader.
+    predictions = _predictions_for(loaders, prepared_config, "val")
+
+    ids, _ = _manifest_rows(prepared_config, "val")
+    assert list(predictions.image_ids) == ids
+    assert predictions.manifest_fingerprint == manifest_fingerprint(
+        prepared_config.manifest_path("val")
+    )
 
 
 def test_factory_rejects_the_shuffled_training_loader(loaders, prepared_config):
@@ -406,6 +533,23 @@ def test_operating_point_reports_checkpoint_provenance(
 
     assert metrics["threshold_checkpoint_fingerprint"] == CHECKPOINT
     assert metrics["threshold_manifest_fingerprint"] == thresholds.manifest_fingerprint
+
+
+def test_chunked_hashing_matches_the_reference_digest(tmp_path):
+    """Chunked reads must produce exactly the one-shot SHA-256."""
+    import hashlib
+
+    from ai.training.thresholds import _HASH_CHUNK_BYTES
+
+    for payload in (
+        b"",
+        b"short weights",
+        # Spans several chunks, with a partial one at the end.
+        bytes(range(256)) * ((_HASH_CHUNK_BYTES * 2 // 256) + 7),
+    ):
+        path = tmp_path / "checkpoint.pt"
+        path.write_bytes(payload)
+        assert checkpoint_fingerprint(path) == hashlib.sha256(payload).hexdigest()
 
 
 def test_checkpoint_fingerprint_tracks_content(tmp_path):

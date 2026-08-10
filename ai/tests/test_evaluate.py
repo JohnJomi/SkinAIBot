@@ -11,6 +11,7 @@ import torch
 from ai.preprocessing.dataset import load_manifest
 from ai.preprocessing.labels import CLASS_CODES, NUM_CLASSES
 from ai.tests.test_training_loop import TinyNet
+from ai.training import evaluate as evaluate_module
 from ai.training.checkpoints import save_checkpoint
 from ai.training.config import (
     EvaluationTargets,
@@ -306,6 +307,27 @@ def test_summary_names_the_split_it_evaluated(harness, capsys):
 
     run(split="test")
     assert "Test split:" in capsys.readouterr().out
+
+
+def test_summary_prints_undefined_macro_auc_by_name(harness, monkeypatch, capsys):
+    # Every class is present in the synthetic split, so macro_auc is always
+    # defined there; force the undefined case to cover the formatting.
+    run, _ = harness
+    real_compute = evaluate_module.compute_metrics
+
+    def undefined_auc(*args, **kwargs):
+        metrics = real_compute(*args, **kwargs)
+        metrics["macro_auc"] = float("nan")
+        return metrics
+
+    monkeypatch.setattr("ai.training.evaluate.compute_metrics", undefined_auc)
+
+    run(split="test")
+    printed = capsys.readouterr().out
+
+    assert "macro AUC     undefined" in printed
+    # Consistent with the per-class column, which never prints a bare nan.
+    assert "nan" not in printed.lower()
 
 
 def test_all_artifacts_are_written(harness):
