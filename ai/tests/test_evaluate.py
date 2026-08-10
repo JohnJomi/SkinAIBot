@@ -32,7 +32,7 @@ from ai.training.report import (
     REPORT_MARKDOWN_NAME,
     SCHEMA_VERSION,
 )
-from ai.training.thresholds import ThresholdSet
+from ai.training.thresholds import ThresholdSet, checkpoint_fingerprint
 
 
 @pytest.fixture
@@ -233,6 +233,79 @@ def test_train_split_cannot_be_evaluated(harness):
 
     with pytest.raises(ValueError, match="split must be one of"):
         run(split="train")
+
+
+def test_thresholds_from_another_checkpoint_are_rejected(harness, tmp_path):
+    """An operating point belongs to the weights it was fitted for."""
+    run, config = harness
+    run(split="val")
+    threshold_path = config.report_dir / THRESHOLDS_NAME
+
+    payload = json.loads(threshold_path.read_text(encoding="utf-8"))
+    payload["checkpoint_fingerprint"] = "f" * 64
+    threshold_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="different checkpoint"):
+        run(split="test", thresholds_path=threshold_path)
+
+
+def test_threshold_provenance_names_the_checkpoint(harness):
+    run, config = harness
+    run(split="val")
+    threshold_path = config.report_dir / THRESHOLDS_NAME
+
+    expected = checkpoint_fingerprint(config.checkpoint_dir.parent / "best.pt")
+    assert ThresholdSet.load(threshold_path).checkpoint_fingerprint == expected
+
+    applied = run(split="test", thresholds_path=threshold_path)
+    assert (
+        applied["operating_point"]["threshold_checkpoint_fingerprint"] == expected
+    )
+
+
+def test_top_k_above_the_class_count_is_rejected(harness):
+    # Previously compute_metrics clamped and the per-image rows failed later.
+    run, _ = harness
+
+    with pytest.raises(ValueError, match="top_k must be in"):
+        run(split="test", top_k=NUM_CLASSES + 1)
+
+
+def test_top_k_within_range_is_honoured(harness):
+    run, _ = harness
+
+    result = run(split="test", top_k=NUM_CLASSES)
+
+    assert str(NUM_CLASSES) in result["metrics"]["top_k_accuracy"]
+    assert all(len(row["top_k"]) == NUM_CLASSES for row in result["predictions"])
+
+
+def test_top_k_falls_back_to_the_config(harness, prepared_config):
+    run, config = harness
+    widened = config.model_copy(
+        update={"evaluation": config.evaluation.model_copy(update={"top_k": 5})}
+    )
+
+    result = evaluate_checkpoint(
+        # top_k left as None, so the config value must be used.
+        prepared_config,
+        widened,
+        config.checkpoint_dir.parent / "best.pt",
+        split="test",
+    )
+
+    assert "5" in result["metrics"]["top_k_accuracy"]
+    assert all(len(row["top_k"]) == 5 for row in result["predictions"])
+
+
+def test_summary_names_the_split_it_evaluated(harness, capsys):
+    run, _ = harness
+
+    run(split="val")
+    assert "Val split:" in capsys.readouterr().out
+
+    run(split="test")
+    assert "Test split:" in capsys.readouterr().out
 
 
 def test_all_artifacts_are_written(harness):

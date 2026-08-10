@@ -175,6 +175,10 @@ def compute_metrics(
     y_prob = np.asarray(y_prob, dtype=float)
     if len(y_true) == 0:
         raise ValueError("cannot compute metrics over an empty evaluation set")
+    # Rejected, not clamped: silently reporting Top-7 when Top-9 was asked for
+    # would disagree with `top_k_predictions`, which raises on the same input.
+    if not 1 <= top_k <= NUM_CLASSES:
+        raise ValueError(f"top_k must be in [1, {NUM_CLASSES}], got {top_k}")
 
     y_pred = y_prob.argmax(axis=1)
 
@@ -219,8 +223,7 @@ def compute_metrics(
             )
         ),
         "top_k_accuracy": {
-            str(k): top_k_accuracy(y_true, y_prob, k)
-            for k in sorted({1, min(top_k, NUM_CLASSES)})
+            str(k): top_k_accuracy(y_true, y_prob, k) for k in sorted({1, top_k})
         },
         "expected_calibration_error": expected_calibration_error(
             y_true, y_prob, calibration_bins

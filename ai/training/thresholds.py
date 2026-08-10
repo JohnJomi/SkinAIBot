@@ -41,9 +41,24 @@ EVALUABLE_SPLITS: tuple[str, ...] = ("val", "test")
 _FACTORY_TOKEN = object()
 
 
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def manifest_fingerprint(path: Path) -> str:
     """SHA-256 of a split manifest, identifying the exact split scored."""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return _file_sha256(path)
+
+
+def checkpoint_fingerprint(path: Path) -> str:
+    """SHA-256 of a checkpoint, identifying the exact weights that produced it.
+
+    An operating point is a property of a specific set of weights: the same
+    threshold applied to a differently-trained model means something else
+    entirely. Binding to the manifest alone would let thresholds fitted from
+    one checkpoint be applied to another without complaint.
+    """
+    return _file_sha256(path)
 
 
 def _read_only(array: np.ndarray) -> np.ndarray:
@@ -166,6 +181,7 @@ class ThresholdSet:
 
     fitted_on: str
     manifest_fingerprint: str
+    checkpoint_fingerprint: str
     precision_floor: float
     thresholds: np.ndarray
     precision: np.ndarray
@@ -182,6 +198,7 @@ class ThresholdSet:
         return {
             "fitted_on": self.fitted_on,
             "manifest_fingerprint": self.manifest_fingerprint,
+            "checkpoint_fingerprint": self.checkpoint_fingerprint,
             "precision_floor": self.precision_floor,
             "per_class": {
                 code: {
@@ -204,9 +221,20 @@ class ThresholdSet:
                 f"threshold set is missing classes {missing}; it was fitted "
                 "under a different label mapping"
             )
+        absent_keys = [
+            key
+            for key in ("fitted_on", "manifest_fingerprint", "checkpoint_fingerprint")
+            if key not in payload
+        ]
+        if absent_keys:
+            raise ValueError(
+                f"threshold set is missing provenance {absent_keys}; it cannot "
+                "be tied to the run that produced it"
+            )
         return cls(
             fitted_on=payload["fitted_on"],
             manifest_fingerprint=payload["manifest_fingerprint"],
+            checkpoint_fingerprint=payload["checkpoint_fingerprint"],
             precision_floor=float(payload["precision_floor"]),
             thresholds=np.array(
                 [_from_nullable(per_class[c]["threshold"]) for c in CLASS_CODES]
@@ -255,12 +283,18 @@ def _from_nullable(value: float | None) -> float:
 
 
 def fit_thresholds(
-    predictions: SplitPredictions, *, precision_floor: float
+    predictions: SplitPredictions,
+    *,
+    precision_floor: float,
+    checkpoint_fingerprint: str,
 ) -> ThresholdSet:
     """Fit per-class thresholds maximising recall subject to a precision floor.
 
     Only validation predictions are accepted. There is no split argument to
     misstate: the tag arrives attached to the data.
+
+    `checkpoint_fingerprint` is required, not optional: a threshold set that
+    cannot name the weights it was fitted from is not safe to apply later.
 
     Recall is what the medical setting cares about, so among the thresholds
     meeting the precision floor we take the one with the highest recall. A
@@ -276,6 +310,11 @@ def fit_thresholds(
     if not 0.0 <= precision_floor <= 1.0:
         raise ValueError(
             f"precision_floor must be in [0, 1], got {precision_floor}"
+        )
+    if not checkpoint_fingerprint:
+        raise ValueError(
+            "checkpoint_fingerprint is required; thresholds must record the "
+            "weights they were fitted from"
         )
 
     y_true = np.asarray(predictions.y_true)
@@ -312,6 +351,7 @@ def fit_thresholds(
     return ThresholdSet(
         fitted_on=predictions.split,
         manifest_fingerprint=predictions.manifest_fingerprint,
+        checkpoint_fingerprint=checkpoint_fingerprint,
         precision_floor=float(precision_floor),
         thresholds=thresholds,
         precision=precisions,
@@ -398,6 +438,7 @@ def operating_point_metrics(
         "fitted_on": thresholds.fitted_on,
         "precision_floor": thresholds.precision_floor,
         "threshold_manifest_fingerprint": thresholds.manifest_fingerprint,
+        "threshold_checkpoint_fingerprint": thresholds.checkpoint_fingerprint,
         "coverage": (total - abstained) / total if total else float("nan"),
         "abstained": abstained,
         "macro_recall": float(np.mean(recalls)) if recalls else float("nan"),

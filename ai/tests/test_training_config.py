@@ -4,6 +4,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from ai.preprocessing.labels import NUM_CLASSES
 from ai.training.config import (
     DEFAULT_CONFIG_PATH,
     TrainingConfig,
@@ -198,6 +199,8 @@ def test_unknown_target_metric_rejected():
     ("key", "value"),
     [
         ("top_k", 0),
+        # Larger than the class count: caught at config load, not downstream.
+        ("top_k", NUM_CLASSES + 1),
         ("calibration_bins", 0),
         ("precision_floor", 1.5),
         ("worst_n", -1),

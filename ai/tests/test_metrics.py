@@ -158,6 +158,23 @@ def test_top_k_accuracy_appears_in_the_metric_set(two_class_case):
     assert metrics["top_k_accuracy"]["3"] == pytest.approx(1.0)
 
 
+def test_compute_metrics_rejects_top_k_above_the_class_count(two_class_case):
+    # It used to clamp, which reported a different K than asked for and then
+    # blew up when the per-image rows were built.
+    with pytest.raises(ValueError, match="top_k must be in"):
+        compute_metrics(*two_class_case, top_k=NUM_CLASSES + 1)
+
+    with pytest.raises(ValueError, match="top_k must be in"):
+        compute_metrics(*two_class_case, top_k=0)
+
+
+def test_compute_metrics_accepts_the_full_range(two_class_case):
+    metrics = compute_metrics(*two_class_case, top_k=NUM_CLASSES)
+
+    assert str(NUM_CLASSES) in metrics["top_k_accuracy"]
+    assert metrics["top_k_accuracy"][str(NUM_CLASSES)] == pytest.approx(1.0)
+
+
 def test_perfect_calibration_scores_zero():
     # Confidence 1.0 on every sample, and every sample correct.
     y_true = np.arange(NUM_CLASSES)

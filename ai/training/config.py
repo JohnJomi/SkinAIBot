@@ -13,6 +13,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ai.preprocessing.config import PROJECT_ROOT
+from ai.preprocessing.labels import NUM_CLASSES
 
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "ai" / "configs" / "training.yaml"
 
@@ -104,7 +105,9 @@ class EvaluationConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    top_k: int = Field(gt=0, default=3)
+    # Bounded by the class count: a larger K has no meaning and would be
+    # rejected downstream rather than at config load.
+    top_k: int = Field(gt=0, le=NUM_CLASSES, default=3)
     calibration_bins: int = Field(gt=0, default=15)
     precision_floor: float = Field(ge=0.0, le=1.0, default=0.5)
     # Most-confident mistakes listed in the Markdown report.

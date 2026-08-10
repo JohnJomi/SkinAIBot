@@ -13,10 +13,14 @@ from ai.training.thresholds import (
     ThresholdSet,
     apply_thresholds,
     build_split_predictions,
+    checkpoint_fingerprint,
     fit_thresholds,
     manifest_fingerprint,
     operating_point_metrics,
 )
+
+# Stand-in for a real checkpoint hash where the weights are not the subject.
+CHECKPOINT = "0" * 64
 
 
 @pytest.fixture(scope="module")
@@ -127,11 +131,15 @@ def test_prediction_arrays_are_read_only(val_predictions):
 
 def test_fitting_on_test_is_refused(test_predictions):
     with pytest.raises(ValueError, match="may only be fitted on the 'val' split"):
-        fit_thresholds(test_predictions, precision_floor=0.5)
+        fit_thresholds(
+            test_predictions, precision_floor=0.5, checkpoint_fingerprint=CHECKPOINT
+        )
 
 
 def test_fitting_on_validation_is_allowed(val_predictions):
-    thresholds = fit_thresholds(val_predictions, precision_floor=0.5)
+    thresholds = fit_thresholds(
+        val_predictions, precision_floor=0.5, checkpoint_fingerprint=CHECKPOINT
+    )
 
     assert thresholds.fitted_on == FITTING_SPLIT
     assert thresholds.manifest_fingerprint == val_predictions.manifest_fingerprint
@@ -178,7 +186,9 @@ def test_unreachable_precision_floor_is_infeasible():
 
 def test_precision_floor_is_validated(val_predictions):
     with pytest.raises(ValueError, match="precision_floor must be in"):
-        fit_thresholds(val_predictions, precision_floor=1.5)
+        fit_thresholds(
+            val_predictions, precision_floor=1.5, checkpoint_fingerprint=CHECKPOINT
+        )
 
 
 def _synthetic(split: str, y_true, y_prob) -> SplitPredictions:
@@ -201,7 +211,9 @@ def _synthetic(split: str, y_true, y_prob) -> SplitPredictions:
 def _fit_unchecked(y_true, y_prob, precision_floor):
     """Fit from hand-built arrays, bypassing the loader-backed factory."""
     return fit_thresholds(
-        _synthetic(FITTING_SPLIT, y_true, y_prob), precision_floor=precision_floor
+        _synthetic(FITTING_SPLIT, y_true, y_prob),
+        precision_floor=precision_floor,
+        checkpoint_fingerprint=CHECKPOINT,
     )
 
 
@@ -209,7 +221,9 @@ def _fit_unchecked(y_true, y_prob, precision_floor):
 
 
 def test_threshold_set_is_immutable(val_predictions):
-    thresholds = fit_thresholds(val_predictions, precision_floor=0.5)
+    thresholds = fit_thresholds(
+        val_predictions, precision_floor=0.5, checkpoint_fingerprint=CHECKPOINT
+    )
 
     with pytest.raises(AttributeError):
         thresholds.precision_floor = 0.9
@@ -218,10 +232,13 @@ def test_threshold_set_is_immutable(val_predictions):
 
 
 def test_only_val_fitted_thresholds_may_be_applied(val_predictions, test_predictions):
-    fitted = fit_thresholds(val_predictions, precision_floor=0.5)
+    fitted = fit_thresholds(
+        val_predictions, precision_floor=0.5, checkpoint_fingerprint=CHECKPOINT
+    )
     forged = ThresholdSet(
         fitted_on="test",
         manifest_fingerprint=fitted.manifest_fingerprint,
+        checkpoint_fingerprint=fitted.checkpoint_fingerprint,
         precision_floor=fitted.precision_floor,
         thresholds=np.array(fitted.thresholds),
         precision=np.array(fitted.precision),
@@ -234,7 +251,9 @@ def test_only_val_fitted_thresholds_may_be_applied(val_predictions, test_predict
 
 
 def test_applying_to_test_predicts_or_abstains(val_predictions, test_predictions):
-    thresholds = fit_thresholds(val_predictions, precision_floor=0.5)
+    thresholds = fit_thresholds(
+        val_predictions, precision_floor=0.5, checkpoint_fingerprint=CHECKPOINT
+    )
     predicted = apply_thresholds(test_predictions, thresholds)
 
     assert predicted.shape == (len(test_predictions),)
@@ -250,6 +269,7 @@ def test_abstention_is_not_folded_into_a_prediction():
     thresholds = ThresholdSet(
         fitted_on=FITTING_SPLIT,
         manifest_fingerprint="synthetic",
+        checkpoint_fingerprint=CHECKPOINT,
         precision_floor=0.5,
         thresholds=np.full(NUM_CLASSES, 0.99),
         precision=np.full(NUM_CLASSES, 1.0),
@@ -270,7 +290,9 @@ def test_abstention_is_not_folded_into_a_prediction():
 
 
 def test_threshold_set_round_trips_through_json(val_predictions, tmp_path):
-    thresholds = fit_thresholds(val_predictions, precision_floor=0.5)
+    thresholds = fit_thresholds(
+        val_predictions, precision_floor=0.5, checkpoint_fingerprint=CHECKPOINT
+    )
     path = tmp_path / "thresholds.json"
     thresholds.save(path)
 
@@ -316,7 +338,9 @@ def test_unreadable_threshold_file_is_rejected(tmp_path):
 def test_threshold_file_from_another_label_mapping_is_rejected(
     val_predictions, tmp_path
 ):
-    thresholds = fit_thresholds(val_predictions, precision_floor=0.5)
+    thresholds = fit_thresholds(
+        val_predictions, precision_floor=0.5, checkpoint_fingerprint=CHECKPOINT
+    )
     payload = thresholds.to_dict()
     del payload["per_class"][CLASS_CODES[0]]
 
@@ -325,6 +349,74 @@ def test_threshold_file_from_another_label_mapping_is_rejected(
 
     with pytest.raises(ValueError, match="different label mapping"):
         ThresholdSet.load(path)
+
+
+def test_fitting_records_the_checkpoint_it_was_fitted_from(val_predictions):
+    thresholds = fit_thresholds(
+        val_predictions, precision_floor=0.5, checkpoint_fingerprint=CHECKPOINT
+    )
+
+    assert thresholds.checkpoint_fingerprint == CHECKPOINT
+
+
+def test_checkpoint_fingerprint_is_required(val_predictions):
+    with pytest.raises(ValueError, match="checkpoint_fingerprint is required"):
+        fit_thresholds(
+            val_predictions, precision_floor=0.5, checkpoint_fingerprint=""
+        )
+
+
+def test_checkpoint_provenance_survives_serialisation(val_predictions, tmp_path):
+    thresholds = fit_thresholds(
+        val_predictions, precision_floor=0.5, checkpoint_fingerprint=CHECKPOINT
+    )
+    path = tmp_path / "thresholds.json"
+    thresholds.save(path)
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["checkpoint_fingerprint"] == CHECKPOINT
+    assert ThresholdSet.load(path).checkpoint_fingerprint == CHECKPOINT
+
+
+def test_threshold_file_without_checkpoint_provenance_is_rejected(
+    val_predictions, tmp_path
+):
+    # A file predating the provenance binding cannot be tied to any weights.
+    thresholds = fit_thresholds(
+        val_predictions, precision_floor=0.5, checkpoint_fingerprint=CHECKPOINT
+    )
+    payload = thresholds.to_dict()
+    del payload["checkpoint_fingerprint"]
+
+    path = tmp_path / "thresholds.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing provenance"):
+        ThresholdSet.load(path)
+
+
+def test_operating_point_reports_checkpoint_provenance(
+    val_predictions, test_predictions
+):
+    thresholds = fit_thresholds(
+        val_predictions, precision_floor=0.5, checkpoint_fingerprint=CHECKPOINT
+    )
+
+    metrics = operating_point_metrics(test_predictions, thresholds)
+
+    assert metrics["threshold_checkpoint_fingerprint"] == CHECKPOINT
+    assert metrics["threshold_manifest_fingerprint"] == thresholds.manifest_fingerprint
+
+
+def test_checkpoint_fingerprint_tracks_content(tmp_path):
+    first = tmp_path / "a.pt"
+    second = tmp_path / "b.pt"
+    first.write_bytes(b"weights-a")
+    second.write_bytes(b"weights-a")
+    assert checkpoint_fingerprint(first) == checkpoint_fingerprint(second)
+
+    second.write_bytes(b"weights-b")
+    assert checkpoint_fingerprint(first) != checkpoint_fingerprint(second)
 
 
 def test_manifest_fingerprint_tracks_content(prepared_config, tmp_path):

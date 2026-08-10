@@ -34,7 +34,7 @@ from torch import nn
 from ai.preprocessing.config import DEFAULT_CONFIG_PATH as DEFAULT_DATA_CONFIG_PATH
 from ai.preprocessing.config import DataConfig, load_config
 from ai.preprocessing.datamodule import build_dataloaders
-from ai.preprocessing.labels import CLASS_CODES, CLASS_NAMES
+from ai.preprocessing.labels import CLASS_CODES, CLASS_NAMES, NUM_CLASSES
 from ai.training.checkpoints import BEST_CHECKPOINT_NAME, load_checkpoint
 from ai.training.config import DEFAULT_CONFIG_PATH as DEFAULT_TRAINING_CONFIG_PATH
 from ai.training.config import TrainingConfig, load_training_config
@@ -58,6 +58,7 @@ from ai.training.thresholds import (
     FITTING_SPLIT,
     ThresholdSet,
     build_split_predictions,
+    checkpoint_fingerprint,
     fit_thresholds,
     manifest_fingerprint,
     operating_point_metrics,
@@ -98,6 +99,11 @@ def evaluate_checkpoint(
     precision_floor = (
         settings.precision_floor if precision_floor is None else precision_floor
     )
+    # Rejected here rather than clamped: clamping would report Top-K for a
+    # different K than asked for, and then fail when building the per-image
+    # rows, which validate strictly.
+    if not 1 <= top_k <= NUM_CLASSES:
+        raise ValueError(f"top_k must be in [1, {NUM_CLASSES}], got {top_k}")
 
     device = resolve_device(training_config.device)
 
@@ -123,8 +129,14 @@ def evaluate_checkpoint(
         calibration_bins=settings.calibration_bins,
     )
 
+    fingerprint = checkpoint_fingerprint(checkpoint_path)
     thresholds = _resolve_thresholds(
-        predictions, data_config, training_config, precision_floor, thresholds_path
+        predictions,
+        data_config,
+        training_config,
+        precision_floor,
+        thresholds_path,
+        fingerprint,
     )
 
     target_results = evaluate_targets(metrics, settings.targets.as_dict())
@@ -191,6 +203,7 @@ def _resolve_thresholds(
     training_config: TrainingConfig,
     precision_floor: float,
     thresholds_path: Path | None,
+    fingerprint: str,
 ) -> ThresholdSet | None:
     """Fit an operating point on validation, or load a frozen one.
 
@@ -198,7 +211,11 @@ def _resolve_thresholds(
     validation branch, so no code path can derive thresholds from test data.
     """
     if predictions.split == FITTING_SPLIT and thresholds_path is None:
-        thresholds = fit_thresholds(predictions, precision_floor=precision_floor)
+        thresholds = fit_thresholds(
+            predictions,
+            precision_floor=precision_floor,
+            checkpoint_fingerprint=fingerprint,
+        )
         thresholds.save(training_config.report_dir / THRESHOLDS_NAME)
         return thresholds
 
@@ -208,20 +225,32 @@ def _resolve_thresholds(
     # Explicit request: a missing or unreadable file is fatal. Falling back to
     # fitting here is exactly the mistake the split guard exists to prevent.
     thresholds = ThresholdSet.load(thresholds_path)
-    _verify_threshold_provenance(thresholds, data_config)
+    _verify_threshold_provenance(thresholds, data_config, fingerprint)
     return thresholds
 
 
 def _verify_threshold_provenance(
-    thresholds: ThresholdSet, data_config: DataConfig
+    thresholds: ThresholdSet, data_config: DataConfig, fingerprint: str
 ) -> None:
-    """Fail loudly if the thresholds no longer match the validation manifest."""
+    """Fail loudly if the thresholds do not belong to this run.
+
+    Both halves matter: the manifest pins which validation data chose the
+    operating point, and the checkpoint pins which weights it was chosen for.
+    A threshold carried over to a retrained model is silently meaningless.
+    """
     current = manifest_fingerprint(data_config.manifest_path(FITTING_SPLIT))
     if thresholds.manifest_fingerprint != current:
         raise ValueError(
             "threshold set was fitted against a different validation split "
             f"(fingerprint {thresholds.manifest_fingerprint[:12]}..., current "
             f"{current[:12]}...); refit with `--split {FITTING_SPLIT}`"
+        )
+    if thresholds.checkpoint_fingerprint != fingerprint:
+        raise ValueError(
+            "threshold set was fitted from a different checkpoint "
+            f"(fingerprint {thresholds.checkpoint_fingerprint[:12]}..., current "
+            f"{fingerprint[:12]}...); an operating point belongs to the weights "
+            f"it was fitted for. Refit with `--split {FITTING_SPLIT}`"
         )
 
 
@@ -297,7 +326,7 @@ def _print_summary(metrics: dict[str, Any], report: dict[str, Any]) -> None:
     Undefined AUCs print as "undefined" rather than a number, so a class that
     could not be scored is never mistaken for one that scored badly.
     """
-    print(f"\nTest split: {report['n_images']} images")
+    print(f"\n{report['split'].capitalize()} split: {report['n_images']} images")
     print(f"  accuracy      {metrics['accuracy']:.4f}")
     print(f"  macro F1      {metrics['macro_f1']:.4f}")
     print(f"  macro recall  {metrics['macro_recall']:.4f}")
@@ -348,12 +377,22 @@ def main() -> None:
         default="test",
         help="split to evaluate; thresholds are only ever fitted on val",
     )
-    parser.add_argument("--top-k", type=int, default=3)
+    # Both default to None so the training config's `evaluation` block is the
+    # single source of truth; passing the flag overrides it.
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=None,
+        help="Top-K accuracy to report; defaults to evaluation.top_k",
+    )
     parser.add_argument(
         "--precision-floor",
         type=float,
-        default=DEFAULT_PRECISION_FLOOR,
-        help=f"precision floor when fitting thresholds on {FITTING_SPLIT}",
+        default=None,
+        help=(
+            f"precision floor when fitting thresholds on {FITTING_SPLIT}; "
+            "defaults to evaluation.precision_floor"
+        ),
     )
     parser.add_argument(
         "--thresholds",
