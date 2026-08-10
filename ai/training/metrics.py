@@ -83,7 +83,88 @@ def per_class_auc(y_true: np.ndarray, y_prob: np.ndarray) -> np.ndarray:
     return aucs
 
 
-def compute_metrics(y_true: np.ndarray, y_prob: np.ndarray) -> dict[str, Any]:
+def top_k_accuracy(y_true: np.ndarray, y_prob: np.ndarray, k: int) -> float:
+    """Fraction of samples whose true class is among the k most likely.
+
+    k=1 is ordinary accuracy; Top-3 is what the product surfaces alongside a
+    prediction, so it is measured rather than assumed.
+    """
+    if not 1 <= k <= NUM_CLASSES:
+        raise ValueError(f"k must be in [1, {NUM_CLASSES}], got {k}")
+
+    y_true = np.asarray(y_true)
+    top = np.argsort(np.asarray(y_prob), axis=1)[:, ::-1][:, :k]
+    return float((top == y_true[:, None]).any(axis=1).mean())
+
+
+def reliability_bins(
+    y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 15
+) -> list[dict[str, Any]]:
+    """Confidence-versus-accuracy bins over the predicted class.
+
+    An empty bin reports NaN for its mean confidence and accuracy rather than
+    0.0: no samples means no measurement, not perfect miscalibration.
+    """
+    if n_bins < 1:
+        raise ValueError(f"n_bins must be >= 1, got {n_bins}")
+
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob, dtype=float)
+    confidence = y_prob.max(axis=1)
+    correct = y_prob.argmax(axis=1) == y_true
+
+    edges = np.linspace(0.0, 1.0, n_bins + 1)
+    bins: list[dict[str, Any]] = []
+    for index in range(n_bins):
+        lower, upper = edges[index], edges[index + 1]
+        # Half-open below, closed at the top, so 1.0 lands in the last bin.
+        in_bin = (confidence > lower) & (confidence <= upper)
+        if index == 0:
+            in_bin |= confidence == lower
+        count = int(in_bin.sum())
+        bins.append(
+            {
+                "lower": float(lower),
+                "upper": float(upper),
+                "count": count,
+                "mean_confidence": (
+                    float(confidence[in_bin].mean()) if count else float("nan")
+                ),
+                "accuracy": float(correct[in_bin].mean()) if count else float("nan"),
+            }
+        )
+    return bins
+
+
+def expected_calibration_error(
+    y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 15
+) -> float:
+    """Support-weighted mean gap between confidence and accuracy.
+
+    0 means reported confidence matches observed accuracy. Confidence is a
+    user-facing number here, so a model that is accurate but overconfident is
+    a real defect and needs its own measurement.
+    """
+    bins = reliability_bins(y_true, y_prob, n_bins)
+    total = sum(bin_["count"] for bin_ in bins)
+    if total == 0:
+        raise ValueError("cannot compute calibration error over an empty set")
+
+    return float(
+        sum(
+            bin_["count"] / total * abs(bin_["accuracy"] - bin_["mean_confidence"])
+            for bin_ in bins
+            if bin_["count"]
+        )
+    )
+
+
+def compute_metrics(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    top_k: int = 3,
+    calibration_bins: int = 15,
+) -> dict[str, Any]:
     """Full metric set over a split's true labels and predicted probabilities.
 
     Recall is reported per class as well as macro-averaged: in this setting a
@@ -94,6 +175,10 @@ def compute_metrics(y_true: np.ndarray, y_prob: np.ndarray) -> dict[str, Any]:
     y_prob = np.asarray(y_prob, dtype=float)
     if len(y_true) == 0:
         raise ValueError("cannot compute metrics over an empty evaluation set")
+    # Rejected, not clamped: silently reporting Top-7 when Top-9 was asked for
+    # would disagree with `top_k_predictions`, which raises on the same input.
+    if not 1 <= top_k <= NUM_CLASSES:
+        raise ValueError(f"top_k must be in [1, {NUM_CLASSES}], got {top_k}")
 
     y_pred = y_prob.argmax(axis=1)
 
@@ -117,6 +202,31 @@ def compute_metrics(y_true: np.ndarray, y_prob: np.ndarray) -> dict[str, Any]:
             recall_score(
                 y_true, y_pred, labels=LABEL_INDICES, average="macro", zero_division=0
             )
+        ),
+        # Support-weighted, the form docs/ROADMAP.md sets a target against.
+        "weighted_f1": float(
+            f1_score(
+                y_true,
+                y_pred,
+                labels=LABEL_INDICES,
+                average="weighted",
+                zero_division=0,
+            )
+        ),
+        "weighted_recall": float(
+            recall_score(
+                y_true,
+                y_pred,
+                labels=LABEL_INDICES,
+                average="weighted",
+                zero_division=0,
+            )
+        ),
+        "top_k_accuracy": {
+            str(k): top_k_accuracy(y_true, y_prob, k) for k in sorted({1, top_k})
+        },
+        "expected_calibration_error": expected_calibration_error(
+            y_true, y_prob, calibration_bins
         ),
         # Mean over the classes whose AUC is defined; NaN if none are.
         "macro_auc": float(aucs[defined].mean()) if defined.any() else float("nan"),

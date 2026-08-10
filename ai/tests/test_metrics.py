@@ -8,7 +8,10 @@ from ai.preprocessing.labels import CLASS_CODES, NUM_CLASSES
 from ai.training.metrics import (
     class_probabilities,
     compute_metrics,
+    expected_calibration_error,
     per_class_auc,
+    reliability_bins,
+    top_k_accuracy,
     top_k_predictions,
 )
 
@@ -118,6 +121,100 @@ def test_single_class_target_set_yields_all_undefined_auc():
     assert np.isnan(per_class_auc(y_true, y_prob)).all()
     assert np.isnan(metrics["macro_auc"])
     assert metrics["accuracy"] == pytest.approx(1.0)
+
+
+def test_top_k_accuracy_brackets_are_exact(two_class_case):
+    y_true, y_prob = two_class_case
+
+    # k=1 is ordinary accuracy; k=NUM_CLASSES always contains the truth.
+    assert top_k_accuracy(y_true, y_prob, 1) == pytest.approx(0.75)
+    assert top_k_accuracy(y_true, y_prob, NUM_CLASSES) == pytest.approx(1.0)
+    # Row 3 is wrong at k=1 but its true class is second, so k=2 recovers it.
+    assert top_k_accuracy(y_true, y_prob, 2) == pytest.approx(1.0)
+
+
+def test_top_k_accuracy_validates_k(two_class_case):
+    y_true, y_prob = two_class_case
+
+    with pytest.raises(ValueError, match="k must be in"):
+        top_k_accuracy(y_true, y_prob, 0)
+    with pytest.raises(ValueError, match="k must be in"):
+        top_k_accuracy(y_true, y_prob, NUM_CLASSES + 1)
+
+
+def test_weighted_f1_is_reported_alongside_macro(two_class_case):
+    metrics = compute_metrics(*two_class_case)
+
+    # Only classes 0 and 1 have support, so the weighted average ignores the
+    # five empty classes that drag the macro down.
+    assert metrics["weighted_f1"] > metrics["macro_f1"]
+    assert metrics["weighted_recall"] == pytest.approx(0.75)
+
+
+def test_top_k_accuracy_appears_in_the_metric_set(two_class_case):
+    metrics = compute_metrics(*two_class_case, top_k=3)
+
+    assert metrics["top_k_accuracy"]["1"] == pytest.approx(metrics["accuracy"])
+    assert metrics["top_k_accuracy"]["3"] == pytest.approx(1.0)
+
+
+def test_compute_metrics_rejects_top_k_above_the_class_count(two_class_case):
+    # It used to clamp, which reported a different K than asked for and then
+    # blew up when the per-image rows were built.
+    with pytest.raises(ValueError, match="top_k must be in"):
+        compute_metrics(*two_class_case, top_k=NUM_CLASSES + 1)
+
+    with pytest.raises(ValueError, match="top_k must be in"):
+        compute_metrics(*two_class_case, top_k=0)
+
+
+def test_compute_metrics_accepts_the_full_range(two_class_case):
+    metrics = compute_metrics(*two_class_case, top_k=NUM_CLASSES)
+
+    assert str(NUM_CLASSES) in metrics["top_k_accuracy"]
+    assert metrics["top_k_accuracy"][str(NUM_CLASSES)] == pytest.approx(1.0)
+
+
+def test_perfect_calibration_scores_zero():
+    # Confidence 1.0 on every sample, and every sample correct.
+    y_true = np.arange(NUM_CLASSES)
+    y_prob = np.eye(NUM_CLASSES)
+
+    assert expected_calibration_error(y_true, y_prob) == pytest.approx(0.0)
+
+
+def test_overconfidence_is_detected():
+    # 90% confident, 50% correct: a 0.4 gap the accuracy alone would not show.
+    y_true = np.array([0, 0, 0, 0])
+    y_prob = np.full((4, NUM_CLASSES), 0.1 / (NUM_CLASSES - 1))
+    y_prob[:, 0] = 0.9
+    y_prob[2:, 0] = 0.05
+    y_prob[2:, 1] = 0.9
+
+    error = expected_calibration_error(y_true, y_prob)
+    assert error == pytest.approx(0.4, abs=0.05)
+
+
+def test_empty_reliability_bins_report_nan_not_zero():
+    y_true = np.zeros(2, dtype=int)
+    y_prob = np.zeros((2, NUM_CLASSES))
+    y_prob[:, 0] = 1.0
+
+    bins = reliability_bins(y_true, y_prob, n_bins=10)
+
+    assert len(bins) == 10
+    assert sum(bin_["count"] for bin_ in bins) == 2
+    empty = [bin_ for bin_ in bins if bin_["count"] == 0]
+    assert empty, "fixture must leave some bins empty"
+    # No samples means no measurement, not perfect miscalibration.
+    assert all(np.isnan(bin_["accuracy"]) for bin_ in empty)
+    assert all(np.isnan(bin_["mean_confidence"]) for bin_ in empty)
+    assert not any(bin_["accuracy"] == 0.0 for bin_ in empty)
+
+
+def test_calibration_over_an_empty_set_rejected():
+    with pytest.raises(ValueError, match="empty set"):
+        expected_calibration_error(np.array([]), np.zeros((0, NUM_CLASSES)))
 
 
 def test_empty_evaluation_set_rejected():
