@@ -11,3 +11,10 @@ pandas==3.0.5
 pillow==12.3.0
 pydantic==2.13.4
 pyyaml==6.0.3
+
+# Model development (Phase 2.2).
+# timm supplies the ImageNet-pretrained EfficientNet-B4 and its head
+# replacement; scikit-learn supplies the evaluation metrics (F1, recall,
+# AUC-ROC, confusion matrix).
+timm==1.0.28
+scikit-learn==1.9.0
