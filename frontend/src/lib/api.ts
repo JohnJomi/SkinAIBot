@@ -22,6 +22,12 @@ export interface UploadRecord {
   content_type: string
   size_bytes: number
   created_at: string
+  /**
+   * Absolute URL the backend serves this image from, suitable as `image_url`
+   * on POST /api/v1/analyze. Optional so an older backend that omits it is a
+   * handled error rather than an undefined slipping into the request.
+   */
+  image_url?: string
 }
 
 export class ApiError extends Error {

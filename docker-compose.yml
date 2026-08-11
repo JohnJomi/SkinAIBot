@@ -33,6 +33,10 @@ services:
       - AI_SERVICE_URL=http://ai-service:8001
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
       - UPLOAD_DIR=/app/backend/uploads
+      # Base for URLs the backend hands out for its own stored images. The AI
+      # service fetches them server-side, so this must resolve on the Compose
+      # network - "localhost" there is the AI container itself, not the backend.
+      - PUBLIC_BASE_URL=http://backend:8000
     volumes:
       - uploads:/app/backend/uploads
     depends_on:

@@ -14,7 +14,7 @@ import { Button, Rule, SectionLabel } from '../components/ui'
 import type { User } from '../lib/api'
 import type { AnalysisRecord } from '../lib/analysisStore'
 import { API_BASE_URL, USE_MOCK_DATA } from '../lib/config'
-import { hasImageUrlSupport } from '../lib/imageSource'
+import { hasImageUrlSupport, hasUploadUrlTemplate } from '../lib/imageSource'
 
 function Row({ term, value }: { term: string; value: string }) {
   return (
@@ -110,7 +110,10 @@ export function SettingsScreen({
             <tbody>
               <Row term="API base URL" value={API_BASE_URL} />
               <Row term="Demo mode" value={USE_MOCK_DATA ? 'On' : 'Off'} />
-              <Row term="Upload URL template" value={hasImageUrlSupport() ? 'Configured' : 'Unset'} />
+              <Row
+                term="Upload URL template"
+                value={hasUploadUrlTemplate() ? 'Configured' : 'Unset (backend serves uploads)'}
+              />
             </tbody>
           </table>
 

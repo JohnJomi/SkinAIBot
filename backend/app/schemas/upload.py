@@ -12,5 +12,9 @@ class UploadResponse(BaseModel):
     content_type: str
     size_bytes: int
     created_at: datetime
+    # Absolute URL the stored image is served from. `/api/v1/analyze` requires
+    # an `image_url` its AI service can fetch server-side, so the client is
+    # given a usable URL rather than having to construct one it cannot know.
+    image_url: str
 
     model_config = {"from_attributes": True}

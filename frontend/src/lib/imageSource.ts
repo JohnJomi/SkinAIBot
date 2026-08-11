@@ -35,16 +35,37 @@ export class MissingImageUrlError extends Error {
   }
 }
 
+/**
+ * Whether an analysis can obtain an image URL at all.
+ *
+ * The backend now serves stored uploads (GET /api/v1/uploads/{stored_filename})
+ * and returns an absolute `image_url` on the upload response, so the capability
+ * exists without any client configuration. The template below remains as an
+ * override for deployments that serve uploads from somewhere else.
+ */
 export function hasImageUrlSupport(): boolean {
+  return true
+}
+
+/** Whether the optional override template is configured. */
+export function hasUploadUrlTemplate(): boolean {
   return Boolean(UPLOAD_URL_TEMPLATE)
 }
 
 export function resolveUploadImageUrl(upload: UploadRecord): string {
-  if (!UPLOAD_URL_TEMPLATE) throw new MissingImageUrlError()
-  return UPLOAD_URL_TEMPLATE.replace('{id}', encodeURIComponent(upload.id)).replace(
-    '{filename}',
-    encodeURIComponent(upload.original_filename),
-  )
+  // Explicit override first, so a deployment serving images elsewhere keeps
+  // control.
+  if (UPLOAD_URL_TEMPLATE) {
+    return UPLOAD_URL_TEMPLATE.replace('{id}', encodeURIComponent(upload.id)).replace(
+      '{filename}',
+      encodeURIComponent(upload.original_filename),
+    )
+  }
+  // Otherwise use what the backend gave us. Still guarded: a backend that
+  // predates the upload-serving route returns no image_url, and sending
+  // `undefined` would fail deep inside the analyze call instead of here.
+  if (upload.image_url) return upload.image_url
+  throw new MissingImageUrlError()
 }
 
 /**

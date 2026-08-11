@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
 
+    # Absolute base for URLs this service hands out for its own stored files.
+    # It must be resolvable by whoever fetches them, which is the AI service,
+    # not the browser: inside Compose that is the `backend` service name, so
+    # the value is supplied per environment rather than assumed here.
+    public_base_url: str = "http://localhost:8000"
+
     upload_dir: str = "uploads"
     max_upload_size_bytes: int = 10 * 1024 * 1024
     allowed_upload_content_types: set[str] = {"image/jpeg", "image/png", "image/webp"}

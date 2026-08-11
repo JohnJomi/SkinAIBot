@@ -67,5 +67,21 @@ class LocalFileStorage:
             if p.is_file() and p.suffix in known_extensions
         }
 
+    def path_for(self, stored_name: str) -> Path:
+        """Filesystem path of a stored file, for serving it back."""
+        return self._stored_path(stored_name)
+
     def url_for(self, stored_name: str) -> str:
-        return f"/uploads/{stored_name}"
+        """Path at which a stored file is served. See the uploads router."""
+        return f"/api/v1/uploads/{stored_name}"
+
+    def absolute_url_for(self, stored_name: str) -> str:
+        """Absolute URL for a stored file.
+
+        `/api/v1/analyze` takes an `image_url` that the AI service fetches
+        server-side, so a relative path or a browser-only host is useless to
+        it. The base comes from configuration because the reachable hostname
+        differs between a Compose network and a developer's machine.
+        """
+        base = get_settings().public_base_url.rstrip("/")
+        return f"{base}{self.url_for(stored_name)}"
