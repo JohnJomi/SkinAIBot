@@ -12,9 +12,13 @@ class UploadResponse(BaseModel):
     content_type: str
     size_bytes: int
     created_at: datetime
-    # Absolute URL the stored image is served from. `/api/v1/analyze` requires
-    # an `image_url` its AI service can fetch server-side, so the client is
-    # given a usable URL rather than having to construct one it cannot know.
-    image_url: str
+    # Two URLs for the same stored image, named for who can actually fetch
+    # each. Collapsing them into one `image_url` is what made it ambiguous:
+    # the value the AI service needs is not loadable by the browser.
+    #
+    # Pass this to `/api/v1/analyze`; the AI service fetches it server-side.
+    analysis_image_url: str
+    # Use this in an <img>; the browser can resolve this host.
+    display_image_url: str
 
     model_config = {"from_attributes": True}

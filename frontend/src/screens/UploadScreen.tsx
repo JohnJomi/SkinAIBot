@@ -11,6 +11,7 @@ import { ImagePreview } from '../components/ImagePreview'
 import { ErrorState, LoadingState, PhotoPlaceholder } from '../components/StateViews'
 import { Button, Field, Rule, SectionLabel } from '../components/ui'
 import { useAnalysisRun } from '../hooks/useAnalysisRun'
+import type { AnalysisStore } from '../lib/analysisStore'
 import { useObjectUrl } from '../hooks/useObjectUrl'
 import type { Route } from '../hooks/useHashRoute'
 import { hasImageUrlSupport } from '../lib/imageSource'
@@ -25,10 +26,12 @@ const SHOOTING_RULES = [
 
 export function UploadScreen({
   token,
+  store,
   navigate,
   onAnalysisSaved,
 }: {
   token: string | null
+  store: AnalysisStore
   navigate: (route: Route) => void
   onAnalysisSaved: () => void
 }) {
@@ -36,7 +39,7 @@ export function UploadScreen({
   const [bodySite, setBodySite] = useState('')
   const [consented, setConsented] = useState(false)
   const previewUrl = useObjectUrl(file)
-  const run = useAnalysisRun(token)
+  const run = useAnalysisRun(token, store)
 
   const busy = run.phase === 'uploading' || run.phase === 'analyzing'
   const configMissing = !USE_MOCK_DATA && !hasImageUrlSupport()
@@ -82,7 +85,7 @@ export function UploadScreen({
           <ErrorState
             variant="config"
             title="Analysis is not wired up in this environment"
-            message="The backend does not yet expose a fetchable URL for uploaded images, which POST /api/v1/analyze requires. Set VITE_UPLOAD_URL_TEMPLATE once an upload-serving endpoint exists, or run with VITE_USE_MOCK_DATA=true to review the screens. Uploading still works."
+            message="This environment cannot reach the analysis service for uploaded photographs. Uploading still works, but no result will be produced until it is configured."
           />
         </div>
       ) : null}

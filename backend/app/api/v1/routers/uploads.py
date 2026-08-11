@@ -32,13 +32,15 @@ async def upload_image(
     session: AsyncSession = Depends(get_session),
 ):
     upload = await UploadService(session).upload_image(str(current_user.id), file)
+    storage = LocalFileStorage()
     return UploadResponse(
         id=upload.id,
         original_filename=upload.original_filename,
         content_type=upload.content_type,
         size_bytes=upload.size_bytes,
         created_at=upload.created_at,
-        image_url=LocalFileStorage().absolute_url_for(upload.stored_filename),
+        analysis_image_url=storage.internal_url_for(upload.stored_filename),
+        display_image_url=storage.browser_url_for(upload.stored_filename),
     )
 
 

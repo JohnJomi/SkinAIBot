@@ -25,6 +25,11 @@ export function CaseRail({
   footer,
 }: {
   record: AnalysisRecord
+  /**
+   * Browser-loadable image source, normally `record.display_image_url`, or an
+   * object URL while a freshly chosen file is still in hand. Omitted or null
+   * shows the placeholder.
+   */
   imageSrc?: string | null
   footer?: React.ReactNode
 }) {

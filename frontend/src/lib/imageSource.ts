@@ -1,35 +1,35 @@
 /**
- * Turning an upload into an `image_url` for POST /api/v1/analyze.
+ * Choosing the right URL for an uploaded image.
  *
- * ── The problem ──────────────────────────────────────────────────────────────
- * `POST /api/v1/analyze` requires `image_url`, a pydantic `HttpUrl` that the AI
- * service fetches server-side. The backend today stores uploads via
- * `LocalFileStorage` under `UPLOAD_DIR` and exposes **no** route that serves or
- * signs them: `POST /api/v1/uploads` returns metadata only, and there is no
- * `GET /api/v1/uploads/{id}`, no static mount, and no presigned-URL endpoint
- * (Sprint 4 in docs/ROADMAP.md).
+ * The backend serves stored uploads from `GET /api/v1/uploads/{stored_filename}`
+ * and returns two absolute URLs for the same file, because two different
+ * clients fetch it and they do not resolve the same hostnames:
  *
- * A browser `blob:`/`data:` URL cannot be used — it is not reachable from the
- * AI container and is not a valid `HttpUrl`.
+ *   analysis_image_url  the AI service fetches this server-side. Inside Docker
+ *                       it resolves to the backend's Compose service name, which
+ *                       a browser cannot resolve at all.
+ *   display_image_url   the browser loads this in an <img>. It uses the host the
+ *                       browser can actually reach.
  *
- * ── The seam ─────────────────────────────────────────────────────────────────
- * This module is the single place that resolves an upload to a URL. Point
- * `VITE_UPLOAD_URL_TEMPLATE` at whatever the backend eventually exposes (any
- * `{id}` / `{filename}` placeholders are substituted) and nothing else in the
- * frontend changes. When it is unset, `resolveUploadImageUrl` throws
- * `MissingImageUrlError`, which UploadScreen renders as an explicit,
- * non-scary configuration error rather than a failed analysis.
+ * Sending the wrong one is silent: the analysis fails, or the photograph renders
+ * broken. This module is the single place that picks between them, so the two
+ * resolvers below are the only supported way to obtain either.
  */
 
 import type { UploadRecord } from './api'
 import { UPLOAD_URL_TEMPLATE } from './config'
 
+/**
+ * The upload response carried no URL the AI service could fetch.
+ *
+ * Expected only against a backend older than the upload-serving route; a
+ * current backend always supplies `analysis_image_url`.
+ */
 export class MissingImageUrlError extends Error {
   constructor() {
     super(
-      'The backend does not yet expose a fetchable URL for uploaded images. ' +
-        'Set VITE_UPLOAD_URL_TEMPLATE (e.g. http://localhost:8000/static/uploads/{id}) ' +
-        'once an upload-serving endpoint exists.',
+      'This upload did not come back with an address the analysis service can ' +
+        'reach, so it cannot be analysed. The application backend may be out of date.',
     )
     this.name = 'MissingImageUrlError'
   }
@@ -38,10 +38,10 @@ export class MissingImageUrlError extends Error {
 /**
  * Whether an analysis can obtain an image URL at all.
  *
- * The backend now serves stored uploads (GET /api/v1/uploads/{stored_filename})
- * and returns an absolute `image_url` on the upload response, so the capability
- * exists without any client configuration. The template below remains as an
- * override for deployments that serve uploads from somewhere else.
+ * Always true: the backend serves stored uploads and returns
+ * `analysis_image_url` on every upload response, so no client configuration is
+ * needed. Kept as the single place to express that, rather than scattering the
+ * assumption across screens.
  */
 export function hasImageUrlSupport(): boolean {
   return true
@@ -52,9 +52,16 @@ export function hasUploadUrlTemplate(): boolean {
   return Boolean(UPLOAD_URL_TEMPLATE)
 }
 
+/**
+ * URL for `POST /api/v1/analyze`, fetched server-side by the AI service.
+ *
+ * Never render this in an <img>: inside Docker it names a host only the server
+ * network can resolve.
+ */
 export function resolveUploadImageUrl(upload: UploadRecord): string {
   // Explicit override first, so a deployment serving images elsewhere keeps
-  // control.
+  // control. See VITE_UPLOAD_URL_TEMPLATE in lib/config.ts - it overrides this
+  // server-side URL only, never the display URL below.
   if (UPLOAD_URL_TEMPLATE) {
     return UPLOAD_URL_TEMPLATE.replace('{id}', encodeURIComponent(upload.id)).replace(
       '{filename}',
@@ -62,10 +69,21 @@ export function resolveUploadImageUrl(upload: UploadRecord): string {
     )
   }
   // Otherwise use what the backend gave us. Still guarded: a backend that
-  // predates the upload-serving route returns no image_url, and sending
-  // `undefined` would fail deep inside the analyze call instead of here.
-  if (upload.image_url) return upload.image_url
+  // predates the upload-serving route returns no analysis_image_url, and
+  // sending `undefined` would fail deep inside the analyze call instead of here.
+  if (upload.analysis_image_url) return upload.analysis_image_url
   throw new MissingImageUrlError()
+}
+
+/**
+ * URL for showing the stored image to the user.
+ *
+ * Deliberately not the analyze URL: that one resolves on the server network
+ * and would render as a broken image. Null when the backend did not supply
+ * one, which the caller shows as a placeholder rather than a broken <img>.
+ */
+export function resolveDisplayImageUrl(upload: UploadRecord): string | null {
+  return upload.display_image_url ?? null
 }
 
 /**

@@ -1,7 +1,11 @@
 /**
  * Image display. One component for every photograph in the app so that swapping
  * placeholders for real assets — or for a served upload URL — is a single change
- * here. `src` may be a local object URL, a backend URL, or null.
+ * here.
+ *
+ * `src` must be browser-loadable: a local object URL, an AnalysisRecord's
+ * `display_image_url`, or null for the placeholder. Never `analysis_image_url` —
+ * that address is resolvable only from the server network and renders broken.
  */
 
 import { formatBytes } from '../lib/format'

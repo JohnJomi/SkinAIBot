@@ -10,9 +10,19 @@
  */
 
 import { useCallback, useState } from 'react'
-import { analyzeImage, ApiError, uploadImage, type AnalyzeResponse } from '../lib/api'
-import { localAnalysisStore, newAnalysisId, type AnalysisRecord } from '../lib/analysisStore'
-import { MissingImageUrlError, resolveUploadImageUrl } from '../lib/imageSource'
+import {
+  analyzeImage,
+  ApiError,
+  RequestTimeoutError,
+  uploadImage,
+  type AnalyzeResponse,
+} from '../lib/api'
+import { newAnalysisId, type AnalysisRecord, type AnalysisStore } from '../lib/analysisStore'
+import {
+  MissingImageUrlError,
+  resolveDisplayImageUrl,
+  resolveUploadImageUrl,
+} from '../lib/imageSource'
 import { USE_MOCK_DATA } from '../lib/config'
 import { mockAnalysis } from '../lib/mockData'
 
@@ -29,7 +39,7 @@ export interface RunState {
   reset: () => void
 }
 
-export function useAnalysisRun(token: string | null): RunState {
+export function useAnalysisRun(token: string | null, store: AnalysisStore): RunState {
   const [phase, setPhase] = useState<RunPhase>('idle')
   const [record, setRecord] = useState<AnalysisRecord | null>(null)
   const [result, setResult] = useState<AnalyzeResponse | null>(null)
@@ -66,11 +76,12 @@ export function useAnalysisRun(token: string | null): RunState {
             content_type: file.type,
             size_bytes: file.size,
           },
-          image_url: null,
+          analysis_image_url: null,
+          display_image_url: null,
           result: demo,
           error: null,
         }
-        localAnalysisStore.save(demoRecord)
+        store.save(demoRecord)
         setRecord(demoRecord)
         setResult(demo)
         setPhase('done')
@@ -104,11 +115,12 @@ export function useAnalysisRun(token: string | null): RunState {
             content_type: upload.content_type,
             size_bytes: upload.size_bytes,
           },
-          image_url: imageUrl,
+          analysis_image_url: imageUrl,
+          display_image_url: resolveDisplayImageUrl(upload),
           result: analysis.status === 'completed' ? analysis : null,
           error: analysis.status === 'failed' ? 'The model could not analyse this photograph.' : null,
         }
-        localAnalysisStore.save(saved)
+        store.save(saved)
         setRecord(saved)
         setResult(analysis)
         setPhase('done')
@@ -118,6 +130,12 @@ export function useAnalysisRun(token: string | null): RunState {
         if (err instanceof MissingImageUrlError) {
           setIsConfigError(true)
           setError(err.message)
+        } else if (err instanceof RequestTimeoutError) {
+          // Named separately: nothing is wrong with the photograph, and
+          // retrying is the useful next step.
+          setError(
+            `${err.message} The service may be busy — please try again in a moment.`,
+          )
         } else if (err instanceof ApiError) {
           setError(err.message)
         } else {
@@ -126,7 +144,7 @@ export function useAnalysisRun(token: string | null): RunState {
         return null
       }
     },
-    [token],
+    [token, store],
   )
 
   return { phase, record, result, error, isConfigError, run, reset }

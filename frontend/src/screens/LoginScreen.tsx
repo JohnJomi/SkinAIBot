@@ -98,7 +98,7 @@ export function LoginScreen({ onLoggedIn }: { onLoggedIn: (token: string) => voi
         <Rule className="mt-auto mb-4 hidden lg:block" />
         <p className="mt-8 text-xs leading-relaxed text-muted lg:mt-0">
           Photographs are stored by the application backend and are never used to train models
-          without your written consent. You can delete every upload from Settings.
+          without your written consent.
         </p>
       </div>
     </div>

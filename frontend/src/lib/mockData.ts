@@ -53,7 +53,8 @@ function record(
       content_type: 'image/jpeg',
       size_bytes: 2_841_077,
     },
-    image_url: null,
+    analysis_image_url: null,
+    display_image_url: null,
     result,
     error,
   }

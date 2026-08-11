@@ -73,6 +73,7 @@ export function ChatScreen({
       rail={
         <CaseRail
           record={record}
+          imageSrc={record.display_image_url}
           footer={
             <Button
               className="w-full justify-start"

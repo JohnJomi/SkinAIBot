@@ -19,11 +19,19 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
 
-    # Absolute base for URLs this service hands out for its own stored files.
-    # It must be resolvable by whoever fetches them, which is the AI service,
-    # not the browser: inside Compose that is the `backend` service name, so
-    # the value is supplied per environment rather than assumed here.
-    public_base_url: str = "http://localhost:8000"
+    # Two bases, because two different clients fetch the same stored file and
+    # they do not resolve the same hostnames.
+    #
+    # internal_base_url: used server-side by the AI service, which lives on the
+    #   Compose network. There "localhost" is the AI container itself, so this
+    #   must be the backend's service name.
+    # browser_base_url: used by the user's browser, which is outside that
+    #   network and cannot resolve a Compose service name at all.
+    #
+    # They are equal outside Docker, which is why one setting was enough until
+    # the stack was containerised.
+    internal_base_url: str = "http://localhost:8000"
+    browser_base_url: str = "http://localhost:8000"
 
     upload_dir: str = "uploads"
     max_upload_size_bytes: int = 10 * 1024 * 1024
