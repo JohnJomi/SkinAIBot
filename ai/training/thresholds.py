@@ -419,14 +419,20 @@ def fit_thresholds(
     )
 
 
-def apply_thresholds(
-    predictions: SplitPredictions, thresholds: ThresholdSet
+def apply_thresholds_to_probabilities(
+    y_prob: np.ndarray, thresholds: ThresholdSet
 ) -> np.ndarray:
-    """Predicted class per sample under the operating point, -1 when none fires.
+    """Predicted class per row under the operating point, -1 when none fires.
 
-    A sample where no feasible class reaches its threshold is left undecided
+    A row where no feasible class reaches its threshold is left undecided
     rather than being forced into its argmax class: an explicit abstention is
     the useful signal in triage, and folding it into a prediction would hide it.
+
+    Takes a raw probability array so evaluation and inference share one
+    implementation. Evaluation reaches it through `apply_thresholds`, which
+    carries the split provenance; inference has no manifest and no loader, so
+    it calls this directly. The `fitted_on` invariant lives here rather than in
+    either caller, so neither can lose it.
     """
     if thresholds.fitted_on != FITTING_SPLIT:
         raise ValueError(
@@ -434,7 +440,13 @@ def apply_thresholds(
             f"{FITTING_SPLIT!r}-fitted thresholds may be applied"
         )
 
-    y_prob = np.asarray(predictions.y_prob)
+    y_prob = np.asarray(y_prob)
+    if y_prob.ndim != 2 or y_prob.shape[1] != NUM_CLASSES:
+        raise ValueError(
+            f"expected probabilities of shape (n, {NUM_CLASSES}), "
+            f"got {y_prob.shape}"
+        )
+
     limits = np.where(thresholds.feasible, thresholds.thresholds, np.inf)
 
     qualifies = y_prob >= limits
@@ -446,6 +458,18 @@ def apply_thresholds(
     any_qualifies = qualifies.any(axis=1)
     predicted[any_qualifies] = margin[any_qualifies].argmax(axis=1)
     return predicted
+
+
+def apply_thresholds(
+    predictions: SplitPredictions, thresholds: ThresholdSet
+) -> np.ndarray:
+    """Apply an operating point to a split's predictions.
+
+    Thin wrapper over `apply_thresholds_to_probabilities`: the split-carrying
+    type is what evaluation has, the raw array is what inference has, and both
+    must resolve to identical arithmetic.
+    """
+    return apply_thresholds_to_probabilities(predictions.y_prob, thresholds)
 
 
 def operating_point_metrics(
