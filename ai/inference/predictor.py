@@ -17,9 +17,8 @@ from typing import Any
 
 import numpy as np
 import torch
-from PIL import Image
 
-from ai.inference.images import describe, load_rgb
+from ai.inference.images import ImageSource, describe, load_rgb
 from ai.inference.provenance import verify_threshold_provenance
 from ai.inference.result import (
     CheckpointProvenance,
@@ -51,6 +50,13 @@ SUPPORTED_ARCHITECTURES: tuple[str, ...] = (
 )
 
 DEFAULT_TOP_K = 3
+
+# Sources are chunked into batches of at most this size. A caller handing in a
+# directory of images should not decide how much memory a forward pass needs,
+# and at 380x380 an unbounded stack is the difference between working and an
+# out-of-memory kill. Internal on purpose: it is a safety bound, not a tuning
+# knob, and the results do not depend on it.
+MAX_BATCH_SIZE = 16
 
 
 def validate_architecture(model_name: str) -> str:
@@ -126,7 +132,7 @@ class Predictor:
 
     def predict(
         self,
-        source: str | Path | Image.Image,
+        source: ImageSource,
         top_k: int = DEFAULT_TOP_K,
         thresholds: ThresholdSet | None = None,
         require_manifest: bool = False,
@@ -145,12 +151,17 @@ class Predictor:
 
     def predict_batch(
         self,
-        sources: list[str | Path | Image.Image],
+        sources: list[ImageSource],
         top_k: int = DEFAULT_TOP_K,
         thresholds: ThresholdSet | None = None,
         require_manifest: bool = False,
     ) -> list[Prediction]:
-        """Predict for several images in one forward pass, in input order."""
+        """Predict for several images, in input order.
+
+        Runs in bounded batches of at most `MAX_BATCH_SIZE`, so the memory a
+        call needs is capped regardless of how many sources are passed. The
+        results are identical to predicting each image on its own.
+        """
         if not 1 <= top_k <= NUM_CLASSES:
             raise ValueError(f"top_k must be in [1, {NUM_CLASSES}], got {top_k}")
         if not sources:
@@ -185,14 +196,27 @@ class Predictor:
         ]
 
     def _probabilities(self, sources: list[Any]) -> np.ndarray:
-        """Model probabilities for each source, in order."""
-        tensors = [self._transform(load_rgb(source)) for source in sources]
-        batch = torch.stack(tensors).to(self.device)
+        """Model probabilities for each source, in order.
 
-        with torch.inference_mode():
-            logits = self._model(batch)
-            probabilities = class_probabilities(logits)
-        return probabilities.cpu().numpy()
+        Chunked so the batch handed to the model is bounded; the chunks are
+        concatenated back into input order, so chunking is invisible to the
+        caller and to the numbers.
+        """
+        if not sources:
+            return np.empty((0, NUM_CLASSES), dtype=float)
+
+        chunks: list[np.ndarray] = []
+        for start in range(0, len(sources), MAX_BATCH_SIZE):
+            window = sources[start : start + MAX_BATCH_SIZE]
+            tensors = [self._transform(load_rgb(source)) for source in window]
+            batch = torch.stack(tensors).to(self.device)
+
+            with torch.inference_mode():
+                logits = self._model(batch)
+                probabilities = class_probabilities(logits)
+            chunks.append(probabilities.cpu().numpy())
+
+        return np.concatenate(chunks)
 
     def _build_prediction(
         self,

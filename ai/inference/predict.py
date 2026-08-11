@@ -150,12 +150,19 @@ def main() -> None:
         print(f"inference failed: {error}", file=sys.stderr)
         raise SystemExit(EXIT_ERROR) from error
 
-    document = json.dumps(payload, indent=2, allow_nan=False)
-    if args.output is not None:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(document + "\n", encoding="utf-8")
-    else:
-        print(document)
+    # Serialisation and output are as failable as the inference itself - a
+    # non-finite probability, an unwritable path, a full disk - and a traceback
+    # is not a useful way to report any of them.
+    try:
+        document = json.dumps(payload, indent=2, allow_nan=False)
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(document + "\n", encoding="utf-8")
+        else:
+            print(document)
+    except Exception as error:  # noqa: BLE001 - the CLI boundary
+        print(f"failed to write output: {error}", file=sys.stderr)
+        raise SystemExit(EXIT_ERROR) from error
 
     _print_summary(payload)
     raise SystemExit(EXIT_OK)

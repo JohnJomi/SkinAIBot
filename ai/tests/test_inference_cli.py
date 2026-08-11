@@ -108,6 +108,42 @@ def test_output_file_holds_the_same_result(invoke, images, tmp_path, capsys):
     assert json.loads(destination.read_text(encoding="utf-8"))["results"]
 
 
+def test_unwritable_output_path_is_an_execution_error(
+    invoke, images, tmp_path, capsys
+):
+    # The destination is a directory, so writing the file fails. That is an
+    # execution failure, not a refused prediction, and must not traceback.
+    destination = tmp_path / "already-a-directory"
+    destination.mkdir()
+
+    code, _, err = invoke(images[0], "--output", str(destination), capsys=capsys)
+
+    assert code == EXIT_ERROR
+    assert "failed to write output" in err
+    assert "Traceback" not in err
+
+
+def test_unserialisable_payload_is_an_execution_error(
+    invoke, images, monkeypatch, capsys
+):
+    # allow_nan=False makes a non-finite probability a hard error rather than
+    # invalid JSON; it must surface through the CLI error path.
+    def nan_payload(*args, **kwargs):
+        return {
+            "device": "cpu",
+            "thresholds": None,
+            "results": [{"source": "x", "confidence": float("nan")}],
+        }
+
+    monkeypatch.setattr("ai.inference.predict.run", nan_payload)
+
+    code, _, err = invoke(images[0], capsys=capsys)
+
+    assert code == EXIT_ERROR
+    assert "failed to write output" in err
+    assert "Traceback" not in err
+
+
 def test_multiple_images_preserve_input_order(invoke, images, capsys):
     code, out, _ = invoke(*images, capsys=capsys)
 

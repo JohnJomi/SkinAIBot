@@ -5,7 +5,11 @@ import pytest
 import torch
 from torch import nn
 
-from ai.inference.predictor import Predictor, validate_architecture
+from ai.inference.predictor import (
+    MAX_BATCH_SIZE,
+    Predictor,
+    validate_architecture,
+)
 from ai.preprocessing.dataset import index_images, load_manifest
 from ai.preprocessing.labels import CLASS_CODES, CLASS_NAMES, NUM_CLASSES
 from ai.training.checkpoints import save_checkpoint
@@ -170,12 +174,34 @@ def test_invalid_top_k_rejected(predictor, sample_images, top_k):
         predictor.predict(sample_images[0], top_k=top_k)
 
 
-def test_no_gradients_are_built(predictor, sample_images):
-    # torch.inference_mode: tensors carry no grad history at all.
+def test_output_is_produced_under_inference_mode(
+    predictor, sample_images, monkeypatch
+):
+    """The model output itself must be an inference tensor.
+
+    Asserting on parameter grads proves nothing - a frozen parameter has no
+    grad either way. Capturing the forward output is what shows the predictor
+    entered inference_mode rather than merely avoiding a backward pass.
+    """
+    captured = {}
+    original_forward = predictor._model.forward
+
+    def recording_forward(*args, **kwargs):
+        output = original_forward(*args, **kwargs)
+        captured["output"] = output
+        return output
+
+    monkeypatch.setattr(predictor._model, "forward", recording_forward)
+
+    # Grad enabled at the call site: only an explicit inference_mode inside the
+    # predictor can produce an inference tensor from here.
     with torch.enable_grad():
         predictor.predict(sample_images[0])
-    assert all(not p.grad_fn for p in predictor._model.parameters())
-    assert all(p.grad is None for p in predictor._model.parameters())
+
+    output = captured["output"]
+    assert output.is_inference() is True
+    assert output.requires_grad is False
+    assert output.grad_fn is None
 
 
 def test_repeated_inference_is_bitwise_identical(predictor, sample_images):
@@ -197,6 +223,41 @@ def test_batch_preserves_input_order(predictor, sample_images):
 
 def test_empty_batch_returns_nothing(predictor):
     assert predictor.predict_batch([]) == []
+
+
+def test_shipped_batch_size_is_bounded():
+    # The point of the constant is that it is finite and small; a huge value
+    # would reintroduce the unbounded stack it exists to prevent.
+    assert 0 < MAX_BATCH_SIZE <= 64
+
+
+def test_batch_spanning_several_chunks_returns_everything_in_order(
+    predictor, prepared_config, monkeypatch
+):
+    """Chunking must be invisible in both ordering and values.
+
+    The chunk size is lowered so eight images span three chunks, the last of
+    them partial. The logic is identical at any size, and testing it here
+    costs a fraction of a full-size batch.
+    """
+    monkeypatch.setattr("ai.inference.predictor.MAX_BATCH_SIZE", 3)
+
+    index = index_images(prepared_config.raw_image_dirs)
+    paths = sorted(index.values())[:8]
+
+    predictions = predictor.predict_batch(list(paths))
+
+    assert len(predictions) == len(paths)
+    assert [p.source for p in predictions] == [str(path) for path in paths]
+
+    # Every row must equal what a single-image call produces, so no chunk
+    # boundary shifts a result.
+    for position, path in enumerate(paths):
+        single = predictor.predict(path)
+        assert predictions[position].probabilities == pytest.approx(
+            single.probabilities, abs=1e-6
+        )
+        assert predictions[position].predicted_code == single.predicted_code
 
 
 def test_provenance_comes_from_the_checkpoint(predictor, b4_checkpoint):

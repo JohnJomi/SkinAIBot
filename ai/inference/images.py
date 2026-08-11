@@ -14,14 +14,14 @@ from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 
-ImageSource = "str | Path | Image.Image"
+type ImageSource = str | Path | Image.Image
 
 
 class InvalidImageError(ValueError):
     """The input exists but cannot be read as an image."""
 
 
-def load_rgb(source: str | Path | Image.Image) -> Image.Image:
+def load_rgb(source: ImageSource) -> Image.Image:
     """Return `source` as an RGB image, whatever it started as."""
     if isinstance(source, Image.Image):
         return source.convert("RGB")
@@ -48,7 +48,7 @@ def load_rgb(source: str | Path | Image.Image) -> Image.Image:
         raise InvalidImageError(f"{path} could not be decoded: {error}") from None
 
 
-def describe(source: str | Path | Image.Image) -> str:
+def describe(source: ImageSource) -> str:
     """A stable identifier for a source, for reports and error messages."""
     if isinstance(source, Image.Image):
         return "<image>"
