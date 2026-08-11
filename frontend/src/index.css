@@ -1,115 +1,200 @@
 @import "tailwindcss";
 
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+/* ═══════════════════════════════════════════════════════════════════════════
+   SkinAIBot — design tokens (Modernist)
+   Flat, architectural, one accent, zero corner radius, 2px rules, Archivo.
+   Exposed through Tailwind v4's @theme so every value is reachable as a utility
+   (bg-ground, text-ink, border-rule, text-accent, …) as well as via var().
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+@theme {
+  --color-ground: #f3f2f2;
+  --color-surface: #eae9e9;
+  --color-ink: #201e1d;
+  --color-accent: #ec3013;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --color-accent-100: #fff2ef;
+  --color-accent-200: #ffe0d9;
+  --color-accent-300: #ffc4b8;
+  --color-accent-400: #ff9783;
+  --color-accent-500: #ff563c;
+  --color-accent-600: #dd2b0f;
+  --color-accent-700: #ae1800;
+  --color-accent-800: #7c1405;
+  --color-accent-900: #4d170e;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
+  --color-neutral-100: #f8f4f4;
+  --color-neutral-200: #eae7e7;
+  --color-neutral-300: #d7d3d3;
+  --color-neutral-400: #bab6b6;
+  --color-neutral-500: #9b9797;
+  --color-neutral-600: #7d7979;
+  --color-neutral-700: #605d5d;
+  --color-neutral-800: #444141;
+  --color-neutral-900: #2d2b2b;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+  --color-rule: color-mix(in srgb, #201e1d 40%, transparent);
+  --color-rule-soft: color-mix(in srgb, #201e1d 18%, transparent);
+  --color-muted: color-mix(in srgb, #201e1d 60%, transparent);
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
+  --font-sans: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
+  --radius-none: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
 
-body {
-  margin: 0;
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2d2b2b 14%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #2d2b2b 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2d2b2b 22%, transparent);
 }
 
 @layer base {
-  h1,
-  h2 {
-    font-family: var(--heading);
-    font-weight: 500;
-    color: var(--text-h);
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  h1 {
-    font-size: 56px;
-    letter-spacing: -1.68px;
-    margin: 32px 0;
-    @media (max-width: 1024px) {
-      font-size: 36px;
-      margin: 20px 0;
-    }
+  body {
+    margin: 0;
+    background: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
   }
-  h2 {
-    font-size: 24px;
-    line-height: 118%;
-    letter-spacing: -0.24px;
-    margin: 0 0 8px;
-    @media (max-width: 1024px) {
-      font-size: 20px;
-    }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 800;
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+    margin: 0;
+    text-wrap: pretty;
   }
-}
-p {
-  margin: 0;
+
+  p { margin: 0; text-wrap: pretty; }
+
+  a { color: var(--color-accent); text-underline-offset: 3px; }
+  a:hover { color: var(--color-accent-600); }
+
+  img { display: block; max-width: 100%; }
+
+  /* Themed focus, never the browser default. */
+  :focus { outline: none; }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+/* ── Component layer ───────────────────────────────────────────────────────
+   Only the handful of patterns that repeat on every screen. Everything else is
+   plain Tailwind utilities in the components themselves.
+   ────────────────────────────────────────────────────────────────────────── */
+
+@layer components {
+  .kicker {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.2;
+    color: var(--color-ink);
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .btn-primary { background: var(--color-accent); color: var(--color-ground); }
+  .btn-primary:not(:disabled):hover { background: var(--color-accent-600); }
+  .btn-primary:not(:disabled):active { background: var(--color-accent-700); }
+
+  .btn-secondary { border-color: var(--color-rule); }
+  .btn-secondary:not(:disabled):hover { background: color-mix(in srgb, var(--color-ink) 7%, transparent); }
+  .btn-secondary:not(:disabled):active { background: color-mix(in srgb, var(--color-ink) 14%, transparent); }
+
+  .btn-ghost { color: var(--color-accent); padding-inline: 4px; }
+  .btn-ghost:not(:disabled):hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+
+  .input {
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 10px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--color-ink);
+    caret-color: var(--color-accent);
+    background: var(--color-surface);
+    border: 1px solid var(--color-rule);
+  }
+  .input:hover { border-color: color-mix(in srgb, var(--color-ink) 45%, transparent); }
+  .input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
+
+  .field-label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 12px;
+    color: var(--color-muted);
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
+  .tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
+  .tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
+  .tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent-700); }
+
+  .rule { height: 2px; border: 0; margin: 0; background: var(--color-rule); }
+
+  .data-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .data-table th {
+    padding: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--color-muted);
+    border-bottom: 2px solid var(--color-rule);
+  }
+  .data-table td { padding: 8px; border-bottom: 1px solid var(--color-rule-soft); }
+  .data-table tbody tr:hover { background: color-mix(in srgb, var(--color-ink) 4%, transparent); }
+
+  /* Photographs print in pure black and white. */
+  .grayscale-photo { filter: grayscale(1) contrast(1.08); }
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+@layer utilities {
+  @keyframes skin-fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+  }
+  .animate-enter { animation: skin-fade-in 180ms ease-out both; }
+
+  @keyframes skin-indeterminate {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(300%); }
+  }
+  .animate-indeterminate { animation: skin-indeterminate 1.1s ease-in-out infinite; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-enter, .animate-indeterminate { animation: none; }
+  }
 }

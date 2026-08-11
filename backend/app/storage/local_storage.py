@@ -67,5 +67,30 @@ class LocalFileStorage:
             if p.is_file() and p.suffix in known_extensions
         }
 
+    def path_for(self, stored_name: str) -> Path:
+        """Filesystem path of a stored file, for serving it back."""
+        return self._stored_path(stored_name)
+
     def url_for(self, stored_name: str) -> str:
-        return f"/uploads/{stored_name}"
+        """Path at which a stored file is served. See the uploads router."""
+        return f"/api/v1/uploads/{stored_name}"
+
+    def internal_url_for(self, stored_name: str) -> str:
+        """Absolute URL for server-side fetching, e.g. by the AI service.
+
+        `/api/v1/analyze` takes an `image_url` the AI service fetches itself, so
+        a relative path or a browser-only host is useless to it. Inside Compose
+        this resolves to the backend's service name.
+        """
+        base = get_settings().internal_base_url.rstrip("/")
+        return f"{base}{self.url_for(stored_name)}"
+
+    def browser_url_for(self, stored_name: str) -> str:
+        """Absolute URL the user's browser can load.
+
+        Separate from `internal_url_for` because the browser sits outside the
+        Compose network and cannot resolve a service name. Same path, different
+        host - never the filesystem location.
+        """
+        base = get_settings().browser_base_url.rstrip("/")
+        return f"{base}{self.url_for(stored_name)}"

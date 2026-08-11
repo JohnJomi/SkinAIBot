@@ -80,6 +80,11 @@ class FileTooLargeError(AppError):
     code = "FILE_TOO_LARGE"
 
 
+class UploadNotFoundError(AppError):
+    status_code = 404
+    code = "UPLOAD_NOT_FOUND"
+
+
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     """Serialize application errors into the documented structured error format."""
     return JSONResponse(
